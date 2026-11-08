@@ -1,0 +1,17 @@
+{
+  "name": "aeron-platform",
+  "version": "1.0.0",
+  "description": "AERON — Multi-Mission Autonomous Drone Platform",
+  "private": true,
+  "scripts": {
+    "backend:dev": "npm --prefix Backend run dev",
+    "backend:build": "npm --prefix Backend run build",
+    "backend:test": "npm --prefix Backend test",
+    "admin:dev": "npm --prefix admin run dev",
+    "admin:build": "npm --prefix admin run build",
+    "manager:dev": "npm --prefix manager run dev",
+    "manager:build": "npm --prefix manager run build"
+  },
+  "author": "AERON Engineering Team",
+  "license": "UNLICENSED"
+}
