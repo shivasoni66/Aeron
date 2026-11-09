@@ -17,8 +17,16 @@ export const createCustomUsers = async () => {
   }
 
   try {
-    const adminPasswordHash = await hashPassword('Admin@123');
-    const managerPasswordHash = await hashPassword('Manager@123');
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const managerPassword = process.env.MANAGER_PASSWORD;
+
+    if (!adminPassword || !managerPassword) {
+      logger.error('[SECURITY-GUARD] ADMIN_PASSWORD and MANAGER_PASSWORD must be supplied exclusively through environment variables.');
+      process.exit(1);
+    }
+
+    const adminPasswordHash = await hashPassword(adminPassword);
+    const managerPasswordHash = await hashPassword(managerPassword);
 
     // 1. Upsert Admin Account
     const adminUser = await User.findOneAndUpdate(

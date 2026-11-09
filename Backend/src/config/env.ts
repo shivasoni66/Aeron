@@ -4,11 +4,124 @@ import { z } from 'zod';
 // Load environment variables from .env file if available
 dotenv.config();
 
+/**
+ * Safely strips outer wrapping quotes, BOM, assignment prefixes, and trims whitespace.
+ * Prevents common misconfigurations from cloud dashboards (e.g. Render/Heroku/AWS).
+ */
+export const sanitizeEnvString = (val?: string): string => {
+  if (!val) return '';
+  let trimmed = val.trim();
+  // Strip Byte Order Mark (BOM) if present
+  if (trimmed.charCodeAt(0) === 0xfeff) {
+    trimmed = trimmed.slice(1).trim();
+  }
+  // Strip accidental assignment prefixes (e.g. "export MONGODB_URI=" or "MONGODB_URI=")
+  trimmed = trimmed.replace(/^(export\s+)?(MONGODB_URI|MONGO_URI)=/, '').trim();
+  // Strip matching outer quotes
+  trimmed = trimmed.replace(/^["'](.*)["']$/, '$1').trim();
+  return trimmed;
+};
+
+export interface SafeMongoUriAudit {
+  exists: boolean;
+  length: number;
+  scheme: 'mongodb' | 'mongodb+srv' | 'other' | 'none';
+  hasSurroundingQuotes: boolean;
+  hasLeadingTrailingWhitespace: boolean;
+  hasAssignmentPrefix: boolean;
+  isLocalhost: boolean;
+  acceptedByParser: boolean;
+  parserError?: string;
+}
+
+/**
+ * Performs a zero-leak audit of a MongoDB connection string.
+ * NEVER logs or exposes credentials, hosts, usernames, or secrets.
+ */
+export const auditMongoUriSafely = (rawVal?: string): SafeMongoUriAudit => {
+  if (!rawVal) {
+    return {
+      exists: false,
+      length: 0,
+      scheme: 'none',
+      hasSurroundingQuotes: false,
+      hasLeadingTrailingWhitespace: false,
+      hasAssignmentPrefix: false,
+      isLocalhost: false,
+      acceptedByParser: false,
+      parserError: 'Value is undefined or empty'
+    };
+  }
+
+  const length = rawVal.length;
+  const hasLeadingTrailingWhitespace = rawVal !== rawVal.trim();
+  const trimmed = rawVal.trim();
+  const hasSurroundingQuotes =
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"));
+  const hasAssignmentPrefix =
+    /^(export\s+)?(MONGODB_URI|MONGO_URI)=/.test(trimmed);
+
+  const sanitized = sanitizeEnvString(rawVal);
+
+  let scheme: 'mongodb' | 'mongodb+srv' | 'other' | 'none' = 'none';
+  if (sanitized.startsWith('mongodb+srv://')) {
+    scheme = 'mongodb+srv';
+  } else if (sanitized.startsWith('mongodb://')) {
+    scheme = 'mongodb';
+  } else if (sanitized.includes('://')) {
+    scheme = 'other';
+  }
+
+  const isLocalhost =
+    sanitized.includes('localhost') ||
+    sanitized.includes('127.0.0.1') ||
+    sanitized.includes('::1');
+
+  let acceptedByParser = false;
+  let parserError: string | undefined;
+
+  if (scheme === 'mongodb' || scheme === 'mongodb+srv') {
+    try {
+      const parsed = new URL(sanitized);
+      if (parsed.protocol === 'mongodb:' || parsed.protocol === 'mongodb+srv:') {
+        acceptedByParser = true;
+      } else {
+        parserError = `Unsupported scheme: ${parsed.protocol}`;
+      }
+    } catch (e) {
+      parserError = e instanceof Error ? e.message : 'URL parser rejected format';
+    }
+  } else {
+    parserError = 'Invalid scheme: expected mongodb:// or mongodb+srv://';
+  }
+
+  return {
+    exists: true,
+    length,
+    scheme,
+    hasSurroundingQuotes,
+    hasLeadingTrailingWhitespace,
+    hasAssignmentPrefix,
+    isLocalhost,
+    acceptedByParser,
+    parserError
+  };
+};
+
+// Normalize process.env.MONGODB_URI before validation if present
+if (process.env.MONGODB_URI) {
+  process.env.MONGODB_URI = sanitizeEnvString(process.env.MONGODB_URI);
+}
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.string().transform((val) => parseInt(val, 10)).default('5000'),
-    MONGODB_URI: z.string().default('mongodb://localhost:27017/aeron_dev'),
+    MONGODB_URI: z
+      .string()
+      .transform((val) => sanitizeEnvString(val))
+      .default('mongodb://localhost:27017/aeron_dev'),
     JWT_SECRET: z.string().min(16).default('aeron_development_secret_jwt_key_at_least_16_chars'),
     JWT_ISSUER: z.string().default('aeron-auth'),
     JWT_AUDIENCE: z.string().default('aeron-client'),
@@ -53,6 +166,28 @@ const envSchema = z
       message:
         'In production, JWT_SECRET must be at least 32 characters long and must not contain the word "development"',
       path: ['JWT_SECRET']
+    }
+  )
+  .refine(
+    (data) => {
+      // In production, enforce non-empty MongoDB URI with valid scheme and reject localhost
+      if (data.NODE_ENV === 'production') {
+        const uri = data.MONGODB_URI;
+        const hasValidScheme =
+          uri.startsWith('mongodb://') || uri.startsWith('mongodb+srv://');
+        const isLocalhost =
+          uri.includes('localhost') ||
+          uri.includes('127.0.0.1') ||
+          uri === 'mongodb://localhost:27017/aeron_dev';
+
+        return hasValidScheme && !isLocalhost;
+      }
+      return true;
+    },
+    {
+      message:
+        'In production, MONGODB_URI is required, must start with mongodb:// or mongodb+srv://, and must not point to localhost or 127.0.0.1',
+      path: ['MONGODB_URI']
     }
   );
 

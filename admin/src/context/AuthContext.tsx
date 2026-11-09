@@ -7,7 +7,7 @@ interface AuthContextType {
   isAdmin: boolean;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
 }
 
@@ -38,21 +38,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
     setError(null);
     try {
       const res = await loginAdmin(email, password);
       if (res.status === 'success' && res.data?.user) {
         setUser(res.data.user);
-        return true;
-      } else {
-        setError(res.message || 'Authentication failed');
-        return false;
+        return { success: true };
       }
+
+      let msg = res.message || 'Authentication failed';
+      if (res.statusCode === 401) {
+        msg = 'Invalid credentials.';
+      } else if (res.statusCode === 503) {
+        msg = 'Authentication service temporarily unavailable. Please try again.';
+      } else if (res.statusCode === 500) {
+        msg = 'An unexpected server error occurred.';
+      } else if (res.statusCode === 400) {
+        msg = res.message || 'Please provide valid login credentials.';
+      }
+
+      setError(msg);
+      return { success: false, message: msg };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed';
       setError(msg);
-      return false;
+      return { success: false, message: msg };
     }
   };
 

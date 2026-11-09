@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { AuthService } from '../services/auth.service.js';
 import { env } from '../config/env.js';
+import { isDatabaseError } from '../config/database.js';
 import { ClientPlatform } from '../models/AuthSession.js';
 import { UserRole } from '../models/User.js';
 
@@ -19,12 +20,15 @@ const getClientPlatform = (req: Request): ClientPlatform => {
 const setAuthCookies = (res: Response, refreshToken: string): string => {
   const isSecure = env.isProduction;
   const csrfToken = crypto.randomBytes(24).toString('hex');
+  // Cross-site contexts (e.g. localhost frontends talking to https Render backend)
+  // require SameSite: None and Secure: true in production.
+  const sameSiteMode = isSecure ? 'none' : 'lax';
 
   // HttpOnly, Secure cookie for Refresh Token
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
     httpOnly: true,
     secure: isSecure,
-    sameSite: 'lax',
+    sameSite: sameSiteMode,
     path: '/api/v1/auth',
     maxAge: env.REFRESH_TOKEN_TTL_DAYS * 86400000
   });
@@ -33,7 +37,7 @@ const setAuthCookies = (res: Response, refreshToken: string): string => {
   res.cookie(CSRF_COOKIE_NAME, csrfToken, {
     httpOnly: false,
     secure: isSecure,
-    sameSite: 'lax',
+    sameSite: sameSiteMode,
     path: '/',
     maxAge: env.REFRESH_TOKEN_TTL_DAYS * 86400000
   });
@@ -42,16 +46,19 @@ const setAuthCookies = (res: Response, refreshToken: string): string => {
 };
 
 const clearAuthCookies = (res: Response): void => {
+  const isSecure = env.isProduction;
+  const sameSiteMode = isSecure ? 'none' : 'lax';
+
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,
-    secure: env.isProduction,
-    sameSite: 'lax',
+    secure: isSecure,
+    sameSite: sameSiteMode,
     path: '/api/v1/auth'
   });
   res.clearCookie(CSRF_COOKIE_NAME, {
     httpOnly: false,
-    secure: env.isProduction,
-    sameSite: 'lax',
+    secure: isSecure,
+    sameSite: sameSiteMode,
     path: '/'
   });
 };
@@ -77,11 +84,25 @@ export class AuthController {
         data: { user }
       });
     } catch (err: unknown) {
+      if (isDatabaseError(err)) {
+        res.status(503).json({
+          status: 'error',
+          code: 'DATABASE_UNAVAILABLE',
+          message: 'Authentication service temporarily unavailable. Please try again.'
+        });
+        return;
+      }
       const error = err as { status?: number; code?: string; message?: string };
-      res.status(error.status ?? 500).json({
+      const status = error.status ?? 500;
+      const code = error.code ?? (status === 500 ? 'INTERNAL_SERVER_ERROR' : 'REGISTRATION_FAILED');
+      const message = status === 500
+        ? 'An unexpected server error occurred'
+        : (error.message ?? 'Failed to register account');
+
+      res.status(status).json({
         status: 'error',
-        code: error.code ?? 'REGISTRATION_FAILED',
-        message: error.message ?? 'Failed to register account'
+        code,
+        message
       });
     }
   }
@@ -91,7 +112,7 @@ export class AuthController {
    */
   public static async login(req: Request, res: Response): Promise<void> {
     try {
-      const { email, password } = req.body;
+      const { email, password } = req.body || {};
       const clientType = getClientPlatform(req);
       const userAgent = req.headers['user-agent'] as string;
       const ipAddress = req.ip || req.socket.remoteAddress;
@@ -125,11 +146,25 @@ export class AuthController {
         }
       });
     } catch (err: unknown) {
+      if (isDatabaseError(err)) {
+        res.status(503).json({
+          status: 'error',
+          code: 'DATABASE_UNAVAILABLE',
+          message: 'Authentication service temporarily unavailable. Please try again.'
+        });
+        return;
+      }
       const error = err as { status?: number; code?: string; message?: string };
-      res.status(error.status ?? 500).json({
+      const status = error.status ?? 500;
+      const code = error.code ?? (status === 500 ? 'INTERNAL_SERVER_ERROR' : 'LOGIN_FAILED');
+      const message = status === 500
+        ? 'An unexpected server error occurred'
+        : (error.message ?? 'Authentication failed');
+
+      res.status(status).json({
         status: 'error',
-        code: error.code ?? 'LOGIN_FAILED',
-        message: error.message ?? 'Authentication failed'
+        code,
+        message
       });
     }
   }
@@ -144,10 +179,10 @@ export class AuthController {
       const rawRefreshToken = req.body?.refreshToken || req.cookies?.[REFRESH_COOKIE_NAME];
 
       if (!rawRefreshToken) {
-        res.status(400).json({
+        res.status(401).json({
           status: 'error',
           code: 'MISSING_REFRESH_TOKEN',
-          message: 'Refresh token must be provided via request body or authorization cookie'
+          message: 'Authentication required.'
         });
         return;
       }
@@ -194,12 +229,26 @@ export class AuthController {
         }
       });
     } catch (err: unknown) {
-      const error = err as { status?: number; code?: string; message?: string };
       clearAuthCookies(res);
-      res.status(error.status ?? 401).json({
+      if (isDatabaseError(err)) {
+        res.status(503).json({
+          status: 'error',
+          code: 'DATABASE_UNAVAILABLE',
+          message: 'Authentication service temporarily unavailable. Please try again.'
+        });
+        return;
+      }
+      const error = err as { status?: number; code?: string; message?: string };
+      const status = error.status ?? 401;
+      const code = error.code ?? 'REFRESH_FAILED';
+      const message = status === 500
+        ? 'An unexpected server error occurred'
+        : (error.message ?? 'Token rotation failed');
+
+      res.status(status).json({
         status: 'error',
-        code: error.code ?? 'REFRESH_FAILED',
-        message: error.message ?? 'Token rotation failed'
+        code,
+        message
       });
     }
   }
@@ -364,11 +413,25 @@ export class AuthController {
         data: { user }
       });
     } catch (err: unknown) {
+      if (isDatabaseError(err)) {
+        res.status(503).json({
+          status: 'error',
+          code: 'DATABASE_UNAVAILABLE',
+          message: 'Authentication service temporarily unavailable. Please try again.'
+        });
+        return;
+      }
       const error = err as { status?: number; code?: string; message?: string };
-      res.status(error.status ?? 500).json({
+      const status = error.status ?? 500;
+      const code = error.code ?? (status === 500 ? 'INTERNAL_SERVER_ERROR' : 'PROVISIONING_FAILED');
+      const message = status === 500
+        ? 'An unexpected server error occurred'
+        : (error.message ?? 'Failed to provision user');
+
+      res.status(status).json({
         status: 'error',
-        code: error.code ?? 'PROVISIONING_FAILED',
-        message: error.message ?? 'Failed to provision user'
+        code,
+        message
       });
     }
   }

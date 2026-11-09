@@ -19,6 +19,8 @@ export interface AuthUser {
 
 export interface AuthResponse {
   status: 'success' | 'error';
+  statusCode?: number;
+  code?: string;
   message?: string;
   data?: {
     accessToken: string;
@@ -52,49 +54,80 @@ export const getCsrfToken = (): string | null => {
 import { API_BASE_URL } from './api';
 
 export const loginManager = async (email: string, password: string): Promise<AuthResponse> => {
-  const res = await fetch(`${API_BASE_URL}/auth/login`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include',
-    body: JSON.stringify({ email, password, clientType: 'WEB' })
-  });
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ email, password, clientType: 'WEB' })
+    });
 
-  const data: AuthResponse = await res.json();
-  if (data.status === 'success' && data.data?.accessToken) {
-    setAccessToken(data.data.accessToken);
-    if (data.data.csrfToken) {
-      setCsrfToken(data.data.csrfToken);
+    const data: AuthResponse = await res.json().catch(() => ({
+      status: 'error',
+      message: res.status === 503
+        ? 'Authentication service temporarily unavailable. Please try again.'
+        : 'An unexpected server error occurred.'
+    }));
+
+    data.statusCode = res.status;
+
+    if (res.status === 200 && data.status === 'success' && data.data?.accessToken) {
+      setAccessToken(data.data.accessToken);
+      if (data.data.csrfToken) {
+        setCsrfToken(data.data.csrfToken);
+      }
     }
+    return data;
+  } catch (err: unknown) {
+    return {
+      status: 'error',
+      statusCode: 0,
+      message: 'Network connection failure. Unable to reach authentication server.'
+    };
   }
-  return data;
 };
 
 export const refreshSession = async (): Promise<AuthResponse> => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  };
-  if (currentCsrfToken) {
-    headers['X-CSRF-Token'] = currentCsrfToken;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
-    method: 'POST',
-    headers,
-    credentials: 'include'
-  });
-
-  const data: AuthResponse = await res.json();
-  if (data.status === 'success' && data.data?.accessToken) {
-    setAccessToken(data.data.accessToken);
-    if (data.data.csrfToken) {
-      setCsrfToken(data.data.csrfToken);
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (currentCsrfToken) {
+      headers['X-CSRF-Token'] = currentCsrfToken;
     }
-  } else {
+
+    const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers,
+      credentials: 'include'
+    });
+
+    const data: AuthResponse = await res.json().catch(() => ({
+      status: 'error',
+      message: 'Session refresh failed'
+    }));
+
+    data.statusCode = res.status;
+
+    if (res.status === 200 && data.status === 'success' && data.data?.accessToken) {
+      setAccessToken(data.data.accessToken);
+      if (data.data.csrfToken) {
+        setCsrfToken(data.data.csrfToken);
+      }
+    } else {
+      setAccessToken(null);
+    }
+    return data;
+  } catch {
     setAccessToken(null);
+    return {
+      status: 'error',
+      statusCode: 0,
+      message: 'Session refresh network error'
+    };
   }
-  return data;
 };
 
 export const logoutManager = async (): Promise<void> => {

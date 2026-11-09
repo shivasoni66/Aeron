@@ -15,6 +15,7 @@ import {
 } from '../utils/jwt.js';
 import { recordAuthAudit } from '../utils/audit.js';
 import { env } from '../config/env.js';
+import { isDatabaseConnected, isDatabaseError } from '../config/database.js';
 import { AuditSource } from '../models/AuditLog.js';
 
 export interface UserDTO {
@@ -71,6 +72,14 @@ export class AuthService {
     const policy = validatePasswordPolicy(params.password);
     if (!policy.valid) {
       throw { status: 400, code: 'WEAK_PASSWORD', message: policy.reason };
+    }
+
+    if (!isDatabaseConnected()) {
+      throw {
+        status: 503,
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Authentication service temporarily unavailable. Please try again.'
+      };
     }
 
     // Check duplicate email
@@ -134,6 +143,14 @@ export class AuthService {
         status: 400,
         code: 'MISSING_CREDENTIALS',
         message: 'Email and password are required'
+      };
+    }
+
+    if (!isDatabaseConnected()) {
+      throw {
+        status: 503,
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Authentication service temporarily unavailable. Please try again.'
       };
     }
 
@@ -255,7 +272,15 @@ export class AuthService {
     source?: AuditSource;
   }): Promise<{ accessToken: string; refreshToken: string; user: UserDTO }> {
     if (!params.rawRefreshToken) {
-      throw { status: 400, code: 'MISSING_REFRESH_TOKEN', message: 'Refresh token is required' };
+      throw { status: 401, code: 'MISSING_REFRESH_TOKEN', message: 'Authentication required. No refresh token provided.' };
+    }
+
+    if (!isDatabaseConnected()) {
+      throw {
+        status: 503,
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Authentication service temporarily unavailable. Please try again.'
+      };
     }
 
     const tokenHash = hashRefreshToken(params.rawRefreshToken);
@@ -554,6 +579,14 @@ export class AuthService {
     const policy = validatePasswordPolicy(params.password);
     if (!policy.valid) {
       throw { status: 400, code: 'WEAK_PASSWORD', message: policy.reason };
+    }
+
+    if (!isDatabaseConnected()) {
+      throw {
+        status: 503,
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Authentication service temporarily unavailable. Please try again.'
+      };
     }
 
     const existing = await User.findOne({ email });

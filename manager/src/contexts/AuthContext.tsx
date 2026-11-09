@@ -67,7 +67,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(res.data.user);
         return { success: true };
       }
-      return { success: false, message: res.message || 'Login failed' };
+
+      let msg = res.message || 'Login failed';
+      if (res.statusCode === 401) {
+        msg = 'Invalid credentials.';
+      } else if (res.statusCode === 503) {
+        msg = 'Authentication service temporarily unavailable. Please try again.';
+      } else if (res.statusCode === 500) {
+        msg = 'An unexpected server error occurred.';
+      } else if (res.statusCode === 400) {
+        msg = res.message || 'Please provide valid login credentials.';
+      }
+
+      return { success: false, message: msg };
     } catch (err: unknown) {
       return { success: false, message: err instanceof Error ? err.message : 'Network error' };
     }

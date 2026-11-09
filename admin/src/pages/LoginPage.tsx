@@ -26,11 +26,11 @@ export const LoginPage: React.FC = () => {
     setSubmitting(true);
     setLocalError(null);
     try {
-      const ok = await login(email, password);
-      if (ok) {
+      const res = await login(email, password);
+      if (res.success) {
         navigate('/', { replace: true });
       } else {
-        setLocalError(error || 'Authentication rejected. Verify credentials.');
+        setLocalError(res.message || 'Authentication rejected.');
       }
     } finally {
       setSubmitting(false);

@@ -7,6 +7,7 @@ import { AuthSession } from '../../src/models/AuthSession.js';
 import { RefreshToken } from '../../src/models/RefreshToken.js';
 import { hashPassword } from '../../src/utils/password.js';
 import { signAccessToken, hashRefreshToken } from '../../src/utils/jwt.js';
+import { setDatabaseConnectedForTesting } from '../../src/config/database.js';
 
 describe('AERON Auth — HTTP Routes & RBAC Integration Suite', () => {
   const app = createApp();
@@ -14,6 +15,7 @@ describe('AERON Auth — HTTP Routes & RBAC Integration Suite', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    setDatabaseConnectedForTesting(null);
   });
 
   // =========================================================================
@@ -219,6 +221,65 @@ describe('AERON Auth — HTTP Routes & RBAC Integration Suite', () => {
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('ACCOUNT_SUSPENDED');
     });
+
+    it('rejects login request missing email or password with 400', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: 'admin@aeron.gov' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('MISSING_CREDENTIALS');
+      expect(res.body.message).toContain('Email and password are required');
+    });
+
+    it('returns 503 Service Unavailable when database is disconnected during login', async () => {
+      setDatabaseConnectedForTesting(false);
+
+      const res = await request(app)
+        .post('/api/v1/auth/login')
+        .send({
+          email: 'admin@aeron.gov',
+          password: 'Password123!'
+        });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('DATABASE_UNAVAILABLE');
+      expect(res.body.message).toContain('Authentication service temporarily unavailable');
+    });
+
+    it('returns 503 Service Unavailable when database query times out or fails with mongo error', async () => {
+      vi.spyOn(User, 'findOne').mockImplementation(() => {
+        throw new Error('Operation `users.findOne()` buffering timed out after 10000ms');
+      });
+
+      const res = await request(app)
+        .post('/api/v1/auth/login')
+        .send({
+          email: 'admin@aeron.gov',
+          password: 'Password123!'
+        });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('DATABASE_UNAVAILABLE');
+      expect(res.body.message).toContain('Authentication service temporarily unavailable');
+    });
+
+    it('returns 500 Internal Server Error on unexpected internal system failure', async () => {
+      vi.spyOn(User, 'findOne').mockImplementation(() => {
+        throw new Error('Unexpected fatal memory corruption failure');
+      });
+
+      const res = await request(app)
+        .post('/api/v1/auth/login')
+        .send({
+          email: 'admin@aeron.gov',
+          password: 'Password123!'
+        });
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe('INTERNAL_SERVER_ERROR');
+      expect(res.body.message).toBe('An unexpected server error occurred');
+    });
   });
 
   // =========================================================================
@@ -347,6 +408,28 @@ describe('AERON Auth — HTTP Routes & RBAC Integration Suite', () => {
         { sessionId },
         expect.objectContaining({ revocationReason: 'REFRESH_TOKEN_REUSE_DETECTED' })
       );
+    });
+
+    it('returns 401 Unauthorized when refresh endpoint is called without token or cookie', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/refresh')
+        .send({});
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('MISSING_REFRESH_TOKEN');
+      expect(res.body.message).toBe('Authentication required.');
+    });
+
+    it('returns 503 Service Unavailable when database is disconnected during refresh', async () => {
+      setDatabaseConnectedForTesting(false);
+
+      const res = await request(app)
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: 'some_sample_refresh_token_to_test_offline_db' });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('DATABASE_UNAVAILABLE');
+      expect(res.body.message).toContain('Authentication service temporarily unavailable');
     });
   });
 
