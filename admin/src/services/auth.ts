@@ -49,14 +49,13 @@ export const getCsrfToken = (): string | null => {
   return currentCsrfToken;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+import { API_BASE_URL } from './api';
 
 export const loginAdmin = async (email: string, password: string): Promise<AuthResponse> => {
   const res = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'X-Client-Platform': 'WEB'
+      'Content-Type': 'application/json'
     },
     credentials: 'include', // Includes HttpOnly refresh token cookie
     body: JSON.stringify({ email, password, clientType: 'WEB' })
@@ -74,8 +73,7 @@ export const loginAdmin = async (email: string, password: string): Promise<AuthR
 
 export const refreshSession = async (): Promise<AuthResponse> => {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Client-Platform': 'WEB'
+    'Content-Type': 'application/json'
   };
   if (currentCsrfToken) {
     headers['X-CSRF-Token'] = currentCsrfToken;

@@ -11,10 +11,17 @@ import {
   MissionEventData
 } from '../types';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  'https://aeron.onrender.com/api/v1';
+// Resolve base origin from environment or default to deployed Render backend
+const RAW_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
+  (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
+  'https://aeron.onrender.com';
+
+// Base host without trailing slashes or /api/v1 (e.g. "https://aeron.onrender.com")
+export const BACKEND_ROOT_URL = RAW_URL.replace(/\/+$/, '').replace(/\/api\/v1\/?$/, '');
+
+// Guaranteed exactly one /api/v1 prefix (e.g. "https://aeron.onrender.com/api/v1")
+export const API_BASE_URL = `${BACKEND_ROOT_URL}/api/v1`;
 
 const authenticatedFetch = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
   const token = getAccessToken();
@@ -45,13 +52,22 @@ const authenticatedFetch = async <T>(endpoint: string, options: RequestInit = {}
   return body.data;
 };
 
-// Health Check
+// Health & Readiness Checks
 export const checkApiHealth = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/health`);
+    const res = await fetch(`${BACKEND_ROOT_URL}/health`);
     return await res.json();
   } catch (err) {
     return { status: 'offline', error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+};
+
+export const checkApiReadiness = async () => {
+  try {
+    const res = await fetch(`${BACKEND_ROOT_URL}/health/ready`);
+    return await res.json();
+  } catch (err) {
+    return { status: 'degraded', error: err instanceof Error ? err.message : 'Unknown error' };
   }
 };
 

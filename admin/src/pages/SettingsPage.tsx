@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { checkApiHealth } from '../services/api';
+import { checkApiHealth, API_BASE_URL, BACKEND_ROOT_URL } from '../services/api';
 
 export const SettingsPage: React.FC = () => {
   const { user, logout } = useAuth();
@@ -20,7 +20,11 @@ export const SettingsPage: React.FC = () => {
     setTestingHealth(true);
     try {
       const res = await checkApiHealth();
-      setApiHealthStatus(res.status === 'ok' || res.status === 'online' ? 'NOMINAL // HTTP 200 OK' : 'OFFLINE // ERROR');
+      setApiHealthStatus(
+        res.status === 'healthy' || res.status === 'ok' || res.status === 'online'
+          ? 'NOMINAL // HTTP 200 OK'
+          : 'OFFLINE // ERROR'
+      );
     } catch {
       setApiHealthStatus('FAILED TO REACH API BACKEND');
     } finally {
@@ -168,11 +172,11 @@ export const SettingsPage: React.FC = () => {
             <div className="space-y-2">
               <div className="flex justify-between items-center bg-surface-container p-2 rounded">
                 <span className="text-on-surface-variant">API BASE URL:</span>
-                <span className="text-primary-fixed font-bold">http://localhost:5000/api/v1</span>
+                <span className="text-primary-fixed font-bold">{API_BASE_URL}</span>
               </div>
               <div className="flex justify-between items-center bg-surface-container p-2 rounded">
                 <span className="text-on-surface-variant">SOCKET SERVER:</span>
-                <span className="text-primary-fixed font-bold">http://localhost:5000</span>
+                <span className="text-primary-fixed font-bold">{BACKEND_ROOT_URL}</span>
               </div>
             </div>
 

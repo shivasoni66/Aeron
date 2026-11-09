@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "test": "vitest run",
     "bootstrap:admin": "tsx src/scripts/bootstrap-admin.ts",
-    "seed:demo": "tsx src/scripts/seed-demo.ts"
+    "seed:demo": "tsx src/scripts/seed-demo.ts",
+    "seed:users": "tsx src/scripts/create-custom-users.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

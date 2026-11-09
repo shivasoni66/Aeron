@@ -1,11 +1,11 @@
 import { io, Socket } from 'socket.io-client';
 import { getAccessToken } from './auth';
+import { BACKEND_ROOT_URL } from './api';
 
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/api\/v1\/?$/, '') ||
-  import.meta.env.VITE_API_URL?.replace(/\/api\/v1\/?$/, '') ||
-  'http://localhost:5000';
+  BACKEND_ROOT_URL ||
+  'https://aeron.onrender.com';
 
 let socket: Socket | null = null;
 
