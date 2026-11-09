@@ -8,12 +8,16 @@ AERON is a production-oriented, multi-mission autonomous drone platform providin
 
 AERON integrates three dedicated client interfaces powered by a single, shared backend:
 
-1. **Admin Web — Drone Intelligence (`GCS-SYS`)**
-   - Direct physical quadcopter telemetry monitoring, hardware bus verification, GPS 3D lock diagnostics, 4S LiPo battery health, airframe vector schematics, and raw MAVLink event logging.
-2. **Manager Web — Mission Intelligence (`GCS v4.2 PRO`)**
-   - Operational flight deck managing four mission verticals (Civic Issue Verification, Crowd Safety, Micro-Climate Monitoring, Subterranean Search & Rescue), 8-stage operational pipelines, operator XP progression, and municipal outcome publishing.
-3. **Citizen Mobile App — Citizen Services**
-   - Native mobile experience for public hazard reporting, GPS geotagging, photographic evidence uploads, 6-stage municipal inspection tracking, and verified civic findings.
+1. **Admin Web — Drone Intelligence (`GCS-SYS`) [TASK 04 COMPLETE]**
+   - Direct physical quadcopter telemetry monitoring, hardware bus verification, GPS 3D lock diagnostics, 4S LiPo battery health, airframe vector schematics, Leaflet GPS radar tracking, and raw MAVLink event logging across 11 fully functional GCS views.
+2. **Manager Web — Mission Intelligence (`GCS v4.2 PRO`) [TASK 07 COMPLETE]**
+   - Operational flight deck managing four mission verticals (Civic Issue Verification, Crowd Safety, Micro-Climate Monitoring, Subterranean Search & Rescue), 8-stage operational lifecycle pipelines, auditable flight session replays on Leaflet tactical maps, incident management, confidential SAR privacy guard, and municipal outcome publishing across 12 dedicated views.
+3. **Citizen Mobile App — Citizen Services [TASK 08 COMPLETE]**
+   - Native Flutter mobile experience for public hazard reporting, GPS observation geotagging, photographic evidence staging, 6-stage municipal inspection tracking, verified public outcome exploration, authentic community achievements, and secure token rotation across 5 main destinations (Home, Explore, Report, My Reports, Profile).
+4. **End-to-End Platform Integration & System Validation [TASK 09 COMPLETE]**
+   - Verified cross-application interoperability, 25 critical integration scenarios, strict M2M machine authentication, pre-provisioned airframe allowlist, Admin-only live camera Socket.IO room air-gap, automated SAR confidentiality protections, and repeatable demo seeding.
+5. **Production Deployment, Custom Domains & Persistent Media Storage [TASK 10 COMPLETE]**
+   - Production readiness for Render (Backend) and Cloudflare Pages (Admin, Manager) with custom domain routing under `sharprad-x.tech` (`aeron-api`, `aeron-admin`, `aeron-manager`). Durable multi-provider media adapter (`StorageService`) supporting Cloudinary CDN and S3 with controlled 503 fallback, SPA client-side refresh routing (`_redirects`), and rigorous SAR/civic media authorization controls.
 
 ---
 
@@ -79,13 +83,16 @@ AERON/
 │   ├── test/                           # Flutter widget tests
 │   └── pubspec.yaml
 │
-├── drone-bridge/                       # Local Python Telemetry Bridge & Simulator
+├── drone-bridge/                       # Local Python Telemetry Bridge & Pixhawk Gateway [TASK 05]
 │   ├── src/
 │   │   ├── config.py                   # Simulator and bridge configuration
+│   │   ├── logging_config.py           # Structured logging configuration
 │   │   ├── models.py                   # Normalized telemetry data structures
 │   │   ├── simulator.py                # 10Hz high-fidelity telemetry simulator
+│   │   ├── mavlink/                    # MAVLink connection, parser, health & telemetry
+│   │   ├── transport/                  # Secure backend transport client with queue
 │   │   └── main.py                     # CLI launcher with graceful shutdown
-│   ├── tests/                          # Automated Python test suite
+│   ├── tests/                          # Automated Python test suite (17 tests)
 │   ├── requirements.txt
 │   ├── .env.example
 │   └── README.md
@@ -93,7 +100,12 @@ AERON/
 ├── documentation/                      # Architectural specifications
 │   ├── architecture.md                 # System architecture overview
 │   ├── database-architecture.md        # Database schemas, ER diagram & indexing
-│   └── authentication-and-security.md  # RBAC, JWT, token rotation & Socket security
+│   ├── authentication-and-security.md  # RBAC, JWT, token rotation & Socket security
+│   ├── pixhawk-mavlink-integration.md  # Pixhawk 2.4.8 USB MAVLink integration guide [TASK 05]
+│   ├── esp32-camera-integration.md     # ESP32-CAM frame transport & preview guide [TASK 06]
+│   ├── manager-mission-intelligence.md # Mission Intelligence & Manager Web guide [TASK 07]
+│   ├── citizen-services-mobile-app.md  # Citizen Services Flutter app manual [TASK 08]
+│   └── deployment-guide.md             # Master production deployment, custom domains & storage [TASK 10]
 │
 ├── stitch_quadcopter_control_interface/# Approved Google Stitch UI Designs
 │   ├── aeron_admin_hardware_telemetry_bench_readiness_refined/
@@ -163,10 +175,12 @@ AERON enforces centralized authentication and backend authorization across all t
 cd Backend
 npm install
 npm run build
-npm test
+npm test              # Executes 13 test suites (187 tests) including media storage and 25 E2E integration scenarios
+npm run seed:demo     # Seeds isolated development / demonstration database
 npm run dev
 # Health endpoint: http://localhost:5000/health
 # Readiness endpoint: http://localhost:5000/health/ready
+# Integrated health: http://localhost:5000/health/integrated
 ```
 
 ### B. Admin Web GCS

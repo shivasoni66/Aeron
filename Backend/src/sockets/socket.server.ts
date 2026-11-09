@@ -130,8 +130,27 @@ export const initSocketServer = (httpServer: HttpServer): SocketIOServer => {
       // Room Authorization Policy
       // -----------------------------------------------------------------------
 
-      // Telemetry & Hardware Feeds: Strictly Admin & authorized Managers
-      if (room.startsWith('drone:telemetry:') || room.startsWith('drone:command:')) {
+      // Live Camera Feeds: Strictly Admin GCS Operators Only
+      if (room.startsWith('drone:camera:')) {
+        if (user.role !== 'admin') {
+          await recordAuthAudit({
+            action: 'SOCKET_UNAUTHORIZED_ROOM_ACCESS',
+            actorId: user.id,
+            entityType: 'SocketRoom',
+            entityId: room,
+            source: user.role === 'citizen' ? 'CITIZEN_APP' : 'MANAGER_WEB',
+            metadata: { attemptedRoom: room, reason: 'Live camera stream is restricted exclusively to Admin GCS operators' }
+          });
+          sendResponse(false, 'Live camera stream is restricted exclusively to Admin GCS operators');
+          return;
+        }
+      }
+
+      // Telemetry & Command Feeds: Strictly Admin & authorized Managers
+      if (
+        room.startsWith('drone:telemetry:') ||
+        room.startsWith('drone:command:')
+      ) {
         if (user.role === 'citizen') {
           await recordAuthAudit({
             action: 'SOCKET_UNAUTHORIZED_ROOM_ACCESS',
@@ -139,9 +158,9 @@ export const initSocketServer = (httpServer: HttpServer): SocketIOServer => {
             entityType: 'SocketRoom',
             entityId: room,
             source: 'CITIZEN_APP',
-            metadata: { attemptedRoom: room, reason: 'Citizen denied raw telemetry' }
+            metadata: { attemptedRoom: room, reason: 'Citizen denied camera / telemetry feed' }
           });
-          sendResponse(false, 'Citizens are strictly prohibited from accessing raw drone telemetry');
+          sendResponse(false, 'Citizens are strictly prohibited from accessing drone camera and telemetry feeds');
           return;
         }
 

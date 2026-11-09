@@ -22,6 +22,9 @@ export interface IMissionOutcome {
   evidenceAssets?: mongoose.Types.ObjectId[];
   reviewStatus: OutcomeReviewStatus;
   isPublic: boolean;
+  isConfidential?: boolean;
+  confidentialReason?: string;
+  publicSummary?: string;
   reviewedBy?: mongoose.Types.ObjectId;
   reviewedAt?: Date;
   publishedAt?: Date;
@@ -87,6 +90,18 @@ const MissionOutcomeSchema = new Schema<IMissionOutcome>(
     isPublic: {
       type: Boolean,
       default: false
+    },
+    isConfidential: {
+      type: Boolean,
+      default: false
+    },
+    confidentialReason: {
+      type: String,
+      trim: true
+    },
+    publicSummary: {
+      type: String,
+      trim: true
     },
     reviewedBy: {
       type: Schema.Types.ObjectId,

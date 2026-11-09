@@ -101,6 +101,44 @@ export const requireAuthentication = async (
 };
 
 /**
+ * Optional authentication: extracts user identity if valid Bearer token is provided,
+ * but allows unauthenticated requests to proceed without error.
+ */
+export const optionalAuthentication = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next();
+  }
+
+  const token = authHeader.split(' ')[1]?.trim();
+  if (!token) {
+    return next();
+  }
+
+  try {
+    const payload = verifyAccessToken(token);
+    const user = await User.findById(payload.sub);
+    if (user && user.accountStatus === 'active') {
+      req.user = {
+        id: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        accountStatus: user.accountStatus
+      };
+    }
+  } catch (_) {
+    // Ignore invalid/expired token in optional authentication mode
+  }
+
+  next();
+};
+
+/**
  * Enforces role-based access control against the authoritative database role.
  */
 export const requireRole = (...allowedRoles: UserRole[]) => {

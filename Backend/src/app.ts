@@ -10,6 +10,9 @@ import { apiRouter } from './routes/index.js';
 export const createApp = (): Express => {
   const app = express();
 
+  // Configure reverse proxy trust for Render / Cloudflare deployments
+  app.set('trust proxy', 1);
+
   // Security and parsing middleware
   app.use(helmetMiddleware);
   app.use(corsMiddleware);

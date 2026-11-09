@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "vitest run",
-    "bootstrap:admin": "tsx src/scripts/bootstrap-admin.ts"
+    "bootstrap:admin": "tsx src/scripts/bootstrap-admin.ts",
+    "seed:demo": "tsx src/scripts/seed-demo.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

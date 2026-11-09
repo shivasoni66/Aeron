@@ -6,6 +6,7 @@ node_modules/
 # Environment and secrets
 .env
 .env.local
+.env.example
 .env.development.local
 .env.test.local
 .env.production.local
@@ -84,4 +85,6 @@ Thumbs.db
 # Temporary runtime data
 tmp/
 temp/
+uploads/
+Backend/uploads/
 

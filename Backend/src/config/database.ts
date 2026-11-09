@@ -38,7 +38,7 @@ export const getDatabaseStatus = (): {
   };
 };
 
-export const connectDatabase = async (): Promise<boolean> => {
+export const connectDatabase = async (customUri?: string): Promise<boolean> => {
   if (mongoose.connection.readyState === 1) {
     logger.info('MongoDB already connected');
     return true;
@@ -47,9 +47,11 @@ export const connectDatabase = async (): Promise<boolean> => {
   currentStatus = 'connecting';
   lastError = null;
 
+  const targetUri = customUri || env.MONGODB_URI;
+
   try {
-    logger.info('Connecting to MongoDB...');
-    await mongoose.connect(env.MONGODB_URI, {
+    logger.info(`Connecting to MongoDB at: ${targetUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}...`);
+    await mongoose.connect(targetUri, {
       serverSelectionTimeoutMS: 5000,
       connectTimeoutMS: 10000
     });

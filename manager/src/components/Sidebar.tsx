@@ -12,20 +12,23 @@ const navItems = [
   { path: '/trip-and-route-history', label: 'Trip & Route History', icon: 'route' },
   { path: '/incident-management', label: 'Incident Management', icon: 'warning' },
   { path: '/mission-outcomes', label: 'Mission Outcomes', icon: 'task_alt' },
-  { path: '/reports-and-analytics', label: 'Reports & Analytics', icon: 'analytics' }
+  { path: '/reports-and-analytics', label: 'Reports & Analytics', icon: 'analytics' },
+  { path: '/settings', label: 'Settings', icon: 'tune' }
 ];
 
 export const Sidebar: React.FC = () => {
   return (
     <aside className="fixed left-0 top-0 h-screen w-72 bg-surface-container-lowest border-r border-surface-variant z-50 flex flex-col justify-between overflow-y-auto">
       <div className="flex flex-col">
+        {/* Brand & Identity */}
         <div className="h-16 px-space-lg flex items-center gap-space-sm border-b border-surface-variant bg-surface-container-lowest">
           <span className="font-headline-lg text-headline-lg tracking-wider text-primary">AERON</span>
           <span className="text-[10px] font-label-telemetry text-primary-fixed uppercase tracking-widest px-2 py-0.5 rounded bg-surface-variant border border-outline-variant">
-            GCS v4.2 PRO
+            MISSION INTEL
           </span>
         </div>
 
+        {/* Navigation Sections */}
         <div className="px-space-md py-space-sm">
           <div className="px-space-sm py-space-xs mb-space-xs">
             <span className="text-[10px] font-label-telemetry uppercase tracking-wider text-outline">
@@ -55,29 +58,29 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
+      {/* Operator Rank / Progression Foundation (Honest unpersisted state per Task 07 spec) */}
       <div className="p-space-md border-t border-surface-variant bg-surface-container-low">
         <div className="p-2.5 rounded bg-surface-container-lowest border border-surface-variant mb-space-sm">
           <div className="flex items-center justify-between text-[11px] font-label-telemetry">
             <span className="text-primary-fixed flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">military_tech</span> RANK LVL 03
+              <span className="material-symbols-outlined text-[14px]">military_tech</span> OPERATOR RANK
             </span>
-            <span className="text-on-surface-variant">2,180 XP</span>
+            <span className="text-on-surface-variant text-[10px]">STANDBY</span>
           </div>
           <div className="w-full bg-surface-container h-1.5 rounded-full mt-1.5 overflow-hidden">
-            <div className="bg-primary-fixed h-full w-[68%]"></div>
+            <div className="bg-primary-fixed/40 h-full w-[25%]"></div>
           </div>
           <div className="flex justify-between text-[9px] font-label-telemetry text-outline mt-1">
-            <span>MISSION SPEC</span>
-            <span>+320 XP TO LVL 4</span>
+            <span>FLIGHT COMMANDER</span>
+            <span>XP ENGINE: STANDBY</span>
           </div>
         </div>
 
         <div className="pt-space-xs flex items-center justify-between text-outline text-[11px] font-label-telemetry">
-          <span>TELEMETRY LINK</span>
-          <span className="text-primary-fixed">99.84% UP</span>
+          <span>OPERATIONAL LINK</span>
+          <span className="text-primary-fixed">ACTIVE (TLS)</span>
         </div>
       </div>
     </aside>
   );
 };
-

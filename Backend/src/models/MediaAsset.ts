@@ -16,7 +16,7 @@ export interface IMediaAsset {
   uploadedBy: mongoose.Types.ObjectId;
   uploadedAt: Date;
   relatedEntityType: MediaRelatedEntity;
-  relatedEntityId: mongoose.Types.ObjectId;
+  relatedEntityId?: mongoose.Types.ObjectId;
   source: MediaSource;
   metadata?: Record<string, unknown>;
   createdAt?: Date;
@@ -88,7 +88,7 @@ const MediaAssetSchema = new Schema<IMediaAsset>(
     },
     relatedEntityId: {
       type: Schema.Types.ObjectId,
-      required: [true, 'Related entity ID is required'],
+      required: false,
       index: true
     },
     source: {

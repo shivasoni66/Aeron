@@ -46,3 +46,29 @@ export const getReadiness = (req: Request, res: Response): void => {
   res.status(statusCode).json(readinessPayload);
 };
 
+export const getIntegratedHealth = (req: Request, res: Response): void => {
+  const db = getDatabaseStatus();
+  const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+
+  res.status(200).json({
+    status: 'operational',
+    service: 'aeron-backend',
+    version: APP_VERSION,
+    uptimeSeconds,
+    timestamp: new Date().toISOString(),
+    environment: env.NODE_ENV,
+    subsystems: {
+      api: { status: 'HEALTHY', healthy: true },
+      database: { status: db.status === 'connected' ? 'CONNECTED' : 'DEGRADED', healthy: db.readyState === 1 },
+      socketServer: { status: 'ACTIVE', healthy: true },
+      telemetryPipeline: { status: 'READY', sourceValidation: 'STRICT' },
+      cameraRelay: { status: 'ACTIVE', buffer: 'IN_MEMORY_BOUNDED' },
+      mediaStorage: {
+        status: env.isProduction ? 'BLOCKED_PENDING_S3_GCS' : 'LOCAL_STAGING',
+        provider: 'LOCAL',
+        durableCloudConfigured: false
+      }
+    }
+  });
+};
+

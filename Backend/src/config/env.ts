@@ -20,7 +20,22 @@ const envSchema = z
       .string()
       .transform((val) => parseInt(val, 10))
       .default('7'),
-    CORS_ORIGIN: z.string().default('http://localhost:5173,http://localhost:5174'),
+    DRONE_BRIDGE_TOKEN: z.string().default('aeron_drone_bridge_secret_token_dev'),
+    CAMERA_BRIDGE_TOKEN: z.string().default('aeron_camera_bridge_secret_token_dev'),
+    STORAGE_PROVIDER: z.enum(['LOCAL', 'CLOUDINARY', 'S3']).default('LOCAL'),
+    CLOUDINARY_CLOUD_NAME: z.string().optional(),
+    CLOUDINARY_API_KEY: z.string().optional(),
+    CLOUDINARY_API_SECRET: z.string().optional(),
+    CLOUDINARY_UPLOAD_PRESET: z.string().optional(),
+    S3_BUCKET_NAME: z.string().optional(),
+    S3_REGION: z.string().optional(),
+    AWS_ACCESS_KEY_ID: z.string().optional(),
+    AWS_SECRET_ACCESS_KEY: z.string().optional(),
+    CORS_ORIGIN: z
+      .string()
+      .default(
+        'http://localhost:5173,http://localhost:5174,https://aeron-admin.sharprad-x.tech,https://aeron-manager.sharprad-x.tech'
+      ),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info')
   })
   .refine(

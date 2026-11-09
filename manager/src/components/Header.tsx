@@ -1,6 +1,17 @@
 import React from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  activeMissionsCount?: number;
+  openIncidentsCount?: number;
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  activeMissionsCount = 0,
+  openIncidentsCount = 0
+}) => {
+  const { user, logout } = useAuth();
+
   return (
     <header className="fixed top-0 left-72 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-surface-variant z-40 px-space-lg flex items-center justify-between">
       <div className="flex items-center gap-space-lg">
@@ -14,30 +25,49 @@ export const Header: React.FC = () => {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-fixed"></span>
           </span>
           <span className="font-label-telemetry text-label-telemetry text-primary-fixed tracking-wider uppercase">
-            4 MISSIONS ACTIVE
+            {activeMissionsCount} {activeMissionsCount === 1 ? 'MISSION' : 'MISSIONS'} ACTIVE
           </span>
         </div>
       </div>
 
       <div className="flex items-center gap-space-md">
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-error-container/30 border border-error/30 text-error">
-          <span className="material-symbols-outlined text-[16px]">crisis_alert</span>
-          <span className="font-label-telemetry text-label-telemetry tracking-wide uppercase">2 INCIDENT ALERTS</span>
-        </div>
+        {openIncidentsCount > 0 ? (
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-error-container/30 border border-error/30 text-error">
+            <span className="material-symbols-outlined text-[16px]">crisis_alert</span>
+            <span className="font-label-telemetry text-label-telemetry tracking-wide uppercase">
+              {openIncidentsCount} INCIDENT {openIncidentsCount === 1 ? 'ALERT' : 'ALERTS'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high border border-surface-variant text-on-surface-variant">
+            <span className="material-symbols-outlined text-[16px] text-primary-fixed">check_circle</span>
+            <span className="font-label-telemetry text-label-telemetry tracking-wide uppercase">
+              ZERO OPEN ALERTS
+            </span>
+          </div>
+        )}
+
         <div className="h-6 w-[1px] bg-surface-variant"></div>
+
         <div className="flex items-center gap-space-sm">
           <div className="text-right hidden md:block">
             <div className="font-label-pill text-label-pill text-on-surface font-semibold flex items-center justify-end gap-1">
-              <span className="material-symbols-outlined text-[16px] text-primary-fixed">shield</span> Flight Commander
+              <span className="material-symbols-outlined text-[16px] text-primary-fixed">shield</span>
+              <span>{user?.name || 'Mission Manager'}</span>
             </div>
-            <div className="text-[11px] font-label-telemetry text-on-surface-variant">OP-8842-X • GCS BENCH [LVL 03]</div>
+            <div className="text-[11px] font-label-telemetry text-on-surface-variant uppercase">
+              {user?.role || 'MANAGER'} // {user?.email || 'authenticated'}
+            </div>
           </div>
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center ring-2 ring-primary-fixed/30">
-            <span className="material-symbols-outlined text-on-primary text-[18px]">person</span>
-          </div>
+          <button
+            onClick={() => logout()}
+            title="Sign Out of Operations Command"
+            className="w-9 h-9 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface hover:text-error flex items-center justify-center border border-surface-variant transition-colors"
+          >
+            <span className="material-symbols-outlined text-[18px]">logout</span>
+          </button>
         </div>
       </div>
     </header>
   );
 };
-

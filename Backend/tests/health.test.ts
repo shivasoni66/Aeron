@@ -29,6 +29,20 @@ describe('AERON Backend — Health & Infrastructure Endpoints', () => {
     expect(res.body.dependencies.socketServer.status).toBe('active');
   });
 
+  it('GET /health/integrated should return full platform subsystem indicators', async () => {
+    const res = await request(app).get('/health/integrated');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('status', 'operational');
+    expect(res.body).toHaveProperty('subsystems');
+    expect(res.body.subsystems).toHaveProperty('api');
+    expect(res.body.subsystems).toHaveProperty('database');
+    expect(res.body.subsystems).toHaveProperty('socketServer');
+    expect(res.body.subsystems).toHaveProperty('telemetryPipeline');
+    expect(res.body.subsystems).toHaveProperty('cameraRelay');
+    expect(res.body.subsystems).toHaveProperty('mediaStorage');
+  });
+
   it('GET /api/v1 should return API root metadata', async () => {
     const res = await request(app).get('/api/v1');
 
