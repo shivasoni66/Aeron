@@ -1,4 +1,4 @@
-import { getAccessToken } from './auth';
+import { getAccessToken, getCsrfToken } from './auth';
 import {
   OverviewData,
   DroneData,
@@ -25,6 +25,7 @@ export const API_BASE_URL = `${BACKEND_ROOT_URL}/api/v1`;
 
 const authenticatedFetch = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
   const token = getAccessToken();
+  const csrf = getCsrfToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>)
@@ -32,6 +33,9 @@ const authenticatedFetch = async <T>(endpoint: string, options: RequestInit = {}
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+  if (csrf) {
+    headers['X-CSRF-Token'] = csrf;
   }
 
   const res = await fetch(`${API_BASE_URL}${endpoint}`, {

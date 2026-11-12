@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useHardware } from '../context/HardwareContext';
 
 interface AutopilotParam {
   name: string;
@@ -21,13 +22,14 @@ const DEFAULT_PARAMS: AutopilotParam[] = [
 ];
 
 export const DroneConfigurationPage: React.FC = () => {
+  const { isOnline, hardwareStatusLabel } = useHardware();
   const [params] = useState<AutopilotParam[]>(DEFAULT_PARAMS);
   const [searchParam, setSearchParam] = useState<string>('');
   const [safetyNotice, setSafetyNotice] = useState<string | null>(null);
 
   const handleRestrictedAction = (actionName: string) => {
     setSafetyNotice(
-      `[SAFETY RESTRICTION] Action '${actionName}' is prohibited in read-only telemetry mode. Modifying autopilot flight parameters requires hardware ground station connection.`
+      `[SAFETY RESTRICTION] Action '${actionName}' is prohibited in read-only telemetry mode. Modifying autopilot flight parameters requires physical ground station connection.`
     );
     setTimeout(() => setSafetyNotice(null), 5000);
   };
@@ -39,122 +41,149 @@ export const DroneConfigurationPage: React.FC = () => {
   );
 
   return (
-    <div className="flex flex-col w-full px-gutter py-space-md space-y-space-md text-on-surface">
+    <div className="flex flex-col w-full px-6 py-6 space-y-6 max-w-[1680px] mx-auto text-text-primary">
       {/* Top Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-space-sm bg-surface-container-lowest p-space-md rounded border border-outline-variant/30">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-surface rounded-xl border border-border shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-[22px]">tune</span>
-            <h1 className="font-headline-md text-headline-md tracking-wider text-on-surface uppercase">
-              DRONE AIRFRAME & PARAMETER ARCHITECTURE
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-accent-primary text-[24px]">tune</span>
+            <h1 className="font-sans font-bold text-base tracking-normal text-text-primary">
+              Airframe & Parameter Architecture
             </h1>
           </div>
-          <p className="text-body-sm font-label-telemetry text-on-surface-variant text-[11px] mt-0.5">
-            AERON-HEX-01 // AIRFRAME HARDWARE SPECIFICATIONS & ARDUPILOT REGISTERS
+          <p className="font-sans text-xs text-text-muted mt-0.5">
+            AERON-HEX-01 • Airframe Hardware Specifications & ArduPilot Registers
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 font-sans text-xs">
           <button
             onClick={() => handleRestrictedAction('WRITE_PARAMETERS')}
-            className="px-3 py-1.5 bg-surface-container-high border border-outline-variant hover:border-primary text-on-surface rounded font-label-telemetry text-[11px] flex items-center gap-1.5 transition-colors cursor-not-allowed opacity-80"
+            className="px-3.5 py-1.5 bg-surface-elevated border border-border hover:border-accent-primary text-text-secondary hover:text-text-primary rounded-lg flex items-center gap-2 transition-colors cursor-not-allowed opacity-80"
             title="Safety policy restricted"
           >
-            <span className="material-symbols-outlined text-[16px] text-primary">save</span>
-            <span>WRITE PARAMETERS [LOCKED]</span>
+            <span className="material-symbols-outlined text-[16px] text-accent-primary">save</span>
+            <span>Write parameters (Safety locked)</span>
           </button>
           <button
             onClick={() => handleRestrictedAction('FLASH_FIRMWARE')}
-            className="px-3 py-1.5 bg-surface-container-high border border-error/50 text-error rounded font-label-telemetry text-[11px] flex items-center gap-1.5 transition-colors cursor-not-allowed opacity-80"
+            className="px-3.5 py-1.5 bg-surface-elevated border border-danger/40 text-danger rounded-lg flex items-center gap-2 transition-colors cursor-not-allowed opacity-80"
             title="Safety policy restricted"
           >
             <span className="material-symbols-outlined text-[16px]">system_update_alt</span>
-            <span>FLASH FIRMWARE [LOCKED]</span>
+            <span>Flash firmware (Safety locked)</span>
           </button>
         </div>
       </div>
 
+      {/* Hardware Sync Banner */}
+      <div className="p-4 bg-surface rounded-xl border border-border shadow-sm flex items-center justify-between font-sans text-xs">
+        <div className="flex items-center gap-3">
+          <span className="material-symbols-outlined text-accent-primary text-[20px]">
+            {isOnline ? 'check_circle' : 'cloud_sync'}
+          </span>
+          <div>
+            <span className="font-bold text-text-primary">
+              Airframe Configuration Profile: AERON-HEX-01
+            </span>
+            <p className="text-text-muted text-[11px] mt-0.5">
+              {isOnline
+                ? 'Pixhawk 2.4.8 connected via MAVLink 2.0. Parameters synchronized with airframe EEPROM registers.'
+                : 'Parameters shown reflect the saved airframe profile for AERON-HEX-01. Physical Pixhawk 2.4.8 is in standby (Awaiting hardware sync).'}
+            </p>
+          </div>
+        </div>
+        <span className={`px-2.5 py-1 rounded-full font-semibold text-[11px] border ${
+          isOnline ? 'bg-success/15 text-success border-success/30' : 'bg-surface-elevated text-text-muted border-border'
+        }`}>
+          {hardwareStatusLabel}
+        </span>
+      </div>
+
       {safetyNotice && (
-        <div className="p-space-sm bg-error-container/30 border border-error text-error rounded font-label-telemetry text-[11px] flex items-center justify-between shadow-lg">
-          <div className="flex items-center gap-2">
+        <div className="p-3.5 bg-danger/15 border border-danger/40 text-danger rounded-xl font-mono text-xs flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-[18px]">lock</span>
             <span>{safetyNotice}</span>
           </div>
-          <button onClick={() => setSafetyNotice(null)} className="text-on-surface hover:text-error">
+          <button onClick={() => setSafetyNotice(null)} className="text-text-primary hover:text-danger">
             ✕
           </button>
         </div>
       )}
 
-      {/* Airframe Physical Specifications (Cards) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-space-sm font-label-telemetry text-[11px]">
-        <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-1">
-          <span className="text-[10px] text-on-surface-variant block uppercase">CHASSIS & PROPULSION</span>
-          <span className="text-sm font-bold text-on-surface block">F450 QUADCOPTER X</span>
-          <span className="text-on-surface-variant text-[10px] block">920KV Brushless Motors (2212)</span>
-          <span className="text-primary-fixed text-[10px] block">1045 Carbon-Nylon Propellers</span>
+      {/* Airframe Physical Specifications */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 font-sans text-xs">
+        <div className="bg-surface p-4 rounded-xl border border-border space-y-1">
+          <span className="text-[10px] text-text-muted uppercase block font-semibold">Chassis & Propulsion</span>
+          <span className="text-sm font-bold text-text-primary block">Hexacopter Frame</span>
+          <span className="text-text-muted text-[11px] block">920KV Brushless Motors (2212)</span>
+          <span className="text-accent-primary text-[11px] block font-semibold">Carbon-Nylon Propellers</span>
         </div>
 
-        <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-1">
-          <span className="text-[10px] text-on-surface-variant block uppercase">SPEED CONTROLLERS</span>
-          <span className="text-sm font-bold text-on-surface block">30A SIMONK ESCs</span>
-          <span className="text-on-surface-variant text-[10px] block">400Hz Refresh Rate (PWM)</span>
-          <span className="text-primary-fixed text-[10px] block">5V 2A Linear BEC Support</span>
+        <div className="bg-surface p-4 rounded-xl border border-border space-y-1">
+          <span className="text-[10px] text-text-muted uppercase block font-semibold">Speed Controllers</span>
+          <span className="text-sm font-bold text-text-primary block">30A Opto ESCs</span>
+          <span className="text-text-muted text-[11px] block">PWM 400Hz Update Rate</span>
+          <span className="text-accent-primary text-[11px] block font-semibold">Active Braking Enabled</span>
         </div>
 
-        <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-1">
-          <span className="text-[10px] text-on-surface-variant block uppercase">POWER SUPPLY SYSTEM</span>
-          <span className="text-sm font-bold text-on-surface block">4S 14.8V 5200MAH LIPO</span>
-          <span className="text-on-surface-variant text-[10px] block">35C Continuous Discharge</span>
-          <span className="text-primary-fixed text-[10px] block">Max Flight Time: ~18-22 Min</span>
+        <div className="bg-surface p-4 rounded-xl border border-border space-y-1">
+          <span className="text-[10px] text-text-muted uppercase block font-semibold">Payload Capacity</span>
+          <span className="text-sm font-bold text-text-primary block">Max 1200g Lift</span>
+          <span className="text-text-muted text-[11px] block">Current Dry Weight: 1450g</span>
+          <span className="text-accent-primary text-[11px] block font-semibold">All-Up-Weight: 2200g</span>
         </div>
 
-        <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-1">
-          <span className="text-[10px] text-on-surface-variant block uppercase">PAYLOAD & LIMITS</span>
-          <span className="text-sm font-bold text-on-surface block">MTOW 2.40 KG</span>
-          <span className="text-on-surface-variant text-[10px] block">Dry Weight: 1.65 kg</span>
-          <span className="text-primary-fixed text-[10px] block">Max Additional Payload: 750g</span>
+        <div className="bg-surface p-4 rounded-xl border border-border space-y-1">
+          <span className="text-[10px] text-text-muted uppercase block font-semibold">Flight Endurance</span>
+          <span className="text-sm font-bold text-text-primary block">~22 Minutes Cruise</span>
+          <span className="text-text-muted text-[11px] block">Based on 4S 5200mAh LiPo</span>
+          <span className="text-accent-primary text-[11px] block font-semibold">Hover Power: 180W</span>
         </div>
       </div>
 
-      {/* Autopilot Parameters Table */}
-      <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-space-sm font-label-telemetry">
-        <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container-highest/60 pb-2">
-          <span className="text-on-surface font-bold text-xs uppercase">
-            READ-ONLY AUTOPILOT REGISTERS (MAVLINK PARAM_VALUE)
-          </span>
-
+      {/* Autopilot Parameters Register Table */}
+      <div className="bg-surface rounded-xl border border-border shadow-sm p-5 space-y-4 font-sans text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-3">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-on-surface-variant text-[16px]">search</span>
+            <span className="material-symbols-outlined text-accent-primary text-[20px]">list_alt</span>
+            <span className="font-bold text-sm text-text-primary">
+              ArduPilot Parameter Registers
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 max-w-sm w-full">
+            <span className="material-symbols-outlined text-text-muted text-[18px]">search</span>
             <input
               type="text"
-              placeholder="SEARCH PARAMETER..."
               value={searchParam}
               onChange={(e) => setSearchParam(e.target.value)}
-              className="bg-surface-container px-2.5 py-1 rounded text-[11px] text-on-surface border border-outline-variant outline-none"
+              placeholder="Search parameters or registers..."
+              className="w-full bg-surface-elevated px-3 py-1.5 rounded-lg border border-border text-text-primary placeholder:text-text-muted focus:border-accent-primary outline-none text-xs"
             />
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-[11px]">
+          <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-surface-container-highest/60 text-on-surface-variant text-[10px]">
-                <th className="py-2 px-3">REGISTER NAME</th>
-                <th className="py-2 px-3">CURRENT VALUE</th>
-                <th className="py-2 px-3">DEFAULT</th>
-                <th className="py-2 px-3">UNIT</th>
-                <th className="py-2 px-3">DESCRIPTION</th>
+              <tr className="border-b border-border text-text-muted text-[11px] font-semibold">
+                <th className="py-2.5 px-3">Parameter</th>
+                <th className="py-2.5 px-3">Value</th>
+                <th className="py-2.5 px-3">Default</th>
+                <th className="py-2.5 px-3">Units</th>
+                <th className="py-2.5 px-3">Function & Policy Description</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-surface-container-highest/40">
+            <tbody className="divide-y divide-border/40 text-text-secondary">
               {filteredParams.map((p) => (
-                <tr key={p.name} className="hover:bg-surface-container-high/40 transition-colors">
-                  <td className="py-2.5 px-3 font-bold text-primary-fixed">{p.name}</td>
-                  <td className="py-2.5 px-3 font-bold text-on-surface">{p.value}</td>
-                  <td className="py-2.5 px-3 text-on-surface-variant">{p.defaultVal}</td>
-                  <td className="py-2.5 px-3 text-on-surface-variant">{p.unit}</td>
-                  <td className="py-2.5 px-3 text-on-surface">{p.description}</td>
+                <tr key={p.name} className="hover:bg-surface-elevated/40 transition-colors">
+                  <td className="py-2.5 px-3 text-accent-primary font-bold font-mono">{p.name}</td>
+                  <td className="py-2.5 px-3 text-text-primary font-bold font-mono">{p.value}</td>
+                  <td className="py-2.5 px-3 text-text-muted font-mono">{p.defaultVal}</td>
+                  <td className="py-2.5 px-3 text-text-secondary font-mono">{p.unit}</td>
+                  <td className="py-2.5 px-3 text-text-muted">{p.description}</td>
                 </tr>
               ))}
             </tbody>
@@ -164,4 +193,3 @@ export const DroneConfigurationPage: React.FC = () => {
     </div>
   );
 };
-

@@ -1,20 +1,56 @@
 import React from 'react';
+import { useHardware } from '../context/HardwareContext';
 
 export const Footer: React.FC = () => {
+  const { hardwareState, hardwareStatusLabel, latestTelemetry, protocol, isOnline } = useHardware();
+
+  const getHardwareStatusClass = () => {
+    if (hardwareState === 'CONNECTED') return 'text-aeron-lime';
+    if (hardwareState === 'SIMULATION') return 'text-caution-amber';
+    return 'text-text-muted';
+  };
+
+  const lat = latestTelemetry?.latitude;
+  const lon = latestTelemetry?.longitude;
+  const alt = latestTelemetry?.altitude;
+
   return (
-    <footer className="fixed bottom-0 left-72 right-0 h-12 bg-surface-container-lowest/95 backdrop-blur-md z-40 shadow-[0_-1px_6px_rgba(0,0,0,0.3)]">
-      <div className="w-full h-12 px-gutter flex items-center justify-between text-on-surface-variant font-label-telemetry text-label-telemetry">
-        <div className="flex items-center gap-space-lg">
-          <span>LINK: <strong className="text-primary-fixed">MAVLINK 57600 BAUD</strong></span>
-          <span>HARDWARE: <strong className="text-on-surface">PIXHAWK 2.4.8 CONNECTED</strong></span>
+    <footer className="fixed bottom-0 left-72 right-0 h-10 bg-surface/95 backdrop-blur-md border-t border-border z-40 px-6 flex items-center justify-between text-xs font-sans text-text-secondary">
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">Link:</span>
+          <span className="text-telemetry-cyan font-mono font-semibold">
+            MAVLink {protocol?.mavlinkVersion || '2.0'} • {protocol?.baudRate ? protocol.baudRate.toLocaleString() : '57,600'} baud
+          </span>
         </div>
-        <div className="flex items-center gap-space-md">
-          <span>BENCH LAT: <strong className="text-on-surface">12.9716° N</strong></span>
-          <span>BENCH LON: <strong className="text-on-surface">77.5946° E</strong></span>
-          <span>ALT: <strong className="text-primary-fixed">42.4M AGL</strong></span>
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted">Hardware:</span>
+          <span className={`font-semibold ${getHardwareStatusClass()}`}>
+            {hardwareStatusLabel}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-6 font-mono text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted font-sans">Lat:</span>
+          <span className="text-navigation-blue font-semibold">
+            {isOnline && lat !== undefined && lat !== null ? `${lat.toFixed(5)}°` : '—'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted font-sans">Lon:</span>
+          <span className="text-navigation-blue font-semibold">
+            {isOnline && lon !== undefined && lon !== null ? `${lon.toFixed(5)}°` : '—'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted font-sans">Alt:</span>
+          <span className="text-aeron-lime font-semibold">
+            {isOnline && alt !== undefined && alt !== null ? `${alt.toFixed(1)}m AGL` : '—'}
+          </span>
         </div>
       </div>
     </footer>
   );
 };
-

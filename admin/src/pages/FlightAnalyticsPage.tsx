@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchFlights, fetchFlightDetails } from '../services/api';
 import { FlightSessionData, TelemetryData } from '../types';
+import { MetricCard } from '../components/MetricCard';
 
 export const FlightAnalyticsPage: React.FC = () => {
   const [flights, setFlights] = useState<FlightSessionData[]>([]);
@@ -54,7 +55,6 @@ export const FlightAnalyticsPage: React.FC = () => {
 
   const selectedFlight = flights.find((f) => f.flightSessionId === selectedFlightId);
 
-  // Computed metrics from telemetry samples
   const altitudes = telemetrySamples.map((t) => t.relativeAltitude ?? t.altitude ?? 0);
   const speeds = telemetrySamples.map((t) => t.groundSpeed ?? 0);
   const voltages = telemetrySamples.map((t) => t.batteryVoltage ?? 0);
@@ -66,7 +66,6 @@ export const FlightAnalyticsPage: React.FC = () => {
     ? `${Math.floor(selectedFlight.durationSeconds / 60)}m ${selectedFlight.durationSeconds % 60}s`
     : '--';
 
-  // SVG Chart Helper: points string from array
   const createSvgPoints = (data: number[], width: number, height: number, minVal?: number, maxVal?: number) => {
     if (data.length < 2) return '';
     const min = minVal !== undefined ? minVal : Math.min(...data);
@@ -76,36 +75,36 @@ export const FlightAnalyticsPage: React.FC = () => {
     return data
       .map((val, idx) => {
         const x = (idx / (data.length - 1)) * width;
-        const y = height - ((val - min) / range) * (height - 20) - 10;
+        const y = height - ((val - min) / range) * (height - 24) - 12;
         return `${x.toFixed(1)},${y.toFixed(1)}`;
       })
       .join(' ');
   };
 
   return (
-    <div className="flex flex-col w-full px-gutter py-space-md space-y-space-md text-on-surface">
+    <div className="flex flex-col w-full px-6 py-6 space-y-6 max-w-[1680px] mx-auto text-text-primary">
       {/* Top Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-space-sm bg-surface-container-lowest p-space-md rounded border border-outline-variant/30">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-surface rounded-xl border border-border shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-[22px]">monitoring</span>
-            <h1 className="font-headline-md text-headline-md tracking-wider text-on-surface uppercase">
-              POST-FLIGHT ANALYTICS & PROFILES
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-accent-primary text-[24px]">monitoring</span>
+            <h1 className="font-sans font-bold text-base tracking-normal text-text-primary">
+              Post-Flight Analytics & Profiles
             </h1>
           </div>
-          <p className="text-body-sm font-label-telemetry text-on-surface-variant text-[11px] mt-0.5">
-            DYNAMIC TELEMETRY HARVEST // POWER CONSUMPTION & KINEMATIC CURVES
+          <p className="font-sans text-xs text-text-muted mt-0.5">
+            Dynamic Telemetry Harvest • Power Consumption & Kinematic Curves
           </p>
         </div>
 
         {/* Flight Selector Dropdown */}
-        <div className="flex items-center gap-2 font-label-telemetry text-[11px]">
-          <span className="text-on-surface-variant">SESSION:</span>
+        <div className="flex items-center gap-2.5 font-mono text-xs">
+          <span className="text-text-muted">SESSION:</span>
           <select
             value={selectedFlightId}
             onChange={(e) => setSelectedFlightId(e.target.value)}
             disabled={flights.length === 0}
-            className="bg-surface-container px-3 py-1.5 rounded border border-outline-variant text-on-surface outline-none focus:border-primary"
+            className="bg-surface-elevated px-3 py-1.5 rounded-lg border border-border text-text-primary outline-none focus:border-accent-primary font-mono"
           >
             {flights.length === 0 ? (
               <option value="">NO SESSIONS AVAILABLE</option>
@@ -121,120 +120,141 @@ export const FlightAnalyticsPage: React.FC = () => {
       </div>
 
       {loading ? (
-        <div className="p-12 text-center text-on-surface-variant font-label-telemetry">
-          LOADING FLIGHT SORTIE ARCHIVES...
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((n) => (
+              <div key={n} className="h-28 bg-surface rounded-xl border border-border animate-pulse" />
+            ))}
+          </div>
+          <div className="h-64 bg-surface rounded-xl border border-border animate-pulse" />
         </div>
       ) : flights.length === 0 ? (
-        <div className="bg-surface-container-lowest p-12 rounded border border-outline-variant/30 text-center space-y-3 font-label-telemetry">
-          <span className="material-symbols-outlined text-[48px] text-on-surface-variant/40">cloud_off</span>
-          <h3 className="text-lg font-bold text-on-surface">NO FLIGHT SESSIONS RECORDED</h3>
-          <p className="text-on-surface-variant text-xs max-w-md mx-auto">
-            NO COMPLETED FLIGHT SESSIONS RECORDED — RUN A HARDWARE BENCH TEST OR SIMULATION IN DRONE-BRIDGE TO GENERATE TELEMETRY PROFILES.
+        <div className="bg-surface p-12 rounded-xl border border-border text-center space-y-3 font-sans">
+          <span className="material-symbols-outlined text-[48px] text-text-muted/40">cloud_off</span>
+          <h3 className="text-base font-bold text-text-primary">No Flight Sessions Recorded</h3>
+          <p className="text-text-muted text-xs max-w-md mx-auto">
+            Flight performance analytics and curves will populate once an active sortie or bench simulation session is completed.
           </p>
         </div>
       ) : (
         <>
           {/* Key Stat Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-space-sm font-label-telemetry">
-            <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30">
-              <span className="text-[10px] text-on-surface-variant block uppercase">FLIGHT DURATION</span>
-              <span className="text-xl font-bold text-on-surface mt-1 block">{durationMin}</span>
-              <span className="text-[10px] text-primary-fixed mt-1 block">STATUS: {selectedFlight?.status}</span>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <MetricCard
+              label="Sortie Duration"
+              value={durationMin}
+              unit="total"
+              icon="timer"
+              status="normal"
+              secondaryValue={`Status: ${selectedFlight?.status || 'COMPLETED'}`}
+            />
 
-            <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30">
-              <span className="text-[10px] text-on-surface-variant block uppercase">PEAK ALTITUDE (AGL)</span>
-              <span className="text-xl font-bold text-primary-fixed mt-1 block">{maxAlt} M</span>
-              <span className="text-[10px] text-on-surface-variant mt-1 block">MS5611 BAROMETER</span>
-            </div>
+            <MetricCard
+              label="Peak Altitude"
+              value={maxAlt}
+              unit="m AGL"
+              icon="height"
+              status="info"
+              secondaryValue="Barometric MS5611"
+            />
 
-            <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30">
-              <span className="text-[10px] text-on-surface-variant block uppercase">MAX GROUND SPEED</span>
-              <span className="text-xl font-bold text-on-surface mt-1 block">{maxSpeed} M/S</span>
-              <span className="text-[10px] text-on-surface-variant mt-1 block">
-                {maxSpeed !== '--' ? `${(parseFloat(maxSpeed) * 3.6).toFixed(1)} KM/H` : '--'}
-              </span>
-            </div>
+            <MetricCard
+              label="Max Groundspeed"
+              value={maxSpeed}
+              unit="m/s"
+              icon="speed"
+              status="active"
+              secondaryValue={maxSpeed !== '--' ? `${(parseFloat(maxSpeed) * 3.6).toFixed(1)} km/h` : '0.0 km/h'}
+            />
 
-            <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30">
-              <span className="text-[10px] text-on-surface-variant block uppercase">MIN VOLTAGE DETECTED</span>
-              <span className="text-xl font-bold text-on-surface mt-1 block">{minVolt} V</span>
-              <span className="text-[10px] text-primary-fixed mt-1 block">4S POWER MODULE</span>
-            </div>
+            <MetricCard
+              label="Min Battery Voltage"
+              value={minVolt}
+              unit="volts"
+              icon="battery_alert"
+              status={minVolt !== '--' && parseFloat(minVolt) < 14.2 ? 'warning' : 'normal'}
+              secondaryValue="Threshold: 14.0V"
+            />
           </div>
 
           {/* Performance Curves Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-space-md">
-            {/* Altitude Profile Chart */}
-            <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-2">
-              <div className="flex items-center justify-between border-b border-surface-container-highest/60 pb-2 font-label-telemetry text-[11px]">
-                <span className="text-on-surface font-bold uppercase">ALTITUDE TRAJECTORY (M AGL)</span>
-                <span className="text-primary-fixed font-bold">{telemetrySamples.length} SAMPLES</span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Altitude Trajectory Chart */}
+            <div className="bg-surface p-5 rounded-xl border border-border space-y-3">
+              <div className="flex items-center justify-between border-b border-border/60 pb-3 font-mono text-xs">
+                <span className="font-sans font-bold text-sm text-text-primary uppercase tracking-wider">
+                  ALTITUDE TRAJECTORY (M AGL)
+                </span>
+                <span className="text-accent-primary font-bold">{telemetrySamples.length} SAMPLES</span>
               </div>
 
               {telemetrySamples.length > 1 ? (
-                <div className="h-48 w-full relative flex items-center justify-center">
+                <div className="h-52 w-full relative flex items-center justify-center p-2 bg-surface-elevated/40 rounded-lg border border-border/60">
                   <svg className="w-full h-full overflow-visible" viewBox="0 0 500 180" preserveAspectRatio="none">
                     <polyline
                       fill="none"
-                      stroke="#bff42e"
+                      stroke="#B5DE53"
                       strokeWidth="2.5"
                       points={createSvgPoints(altitudes, 500, 180)}
                     />
                   </svg>
                 </div>
               ) : (
-                <div className="h-48 flex items-center justify-center text-on-surface-variant font-label-telemetry text-xs">
+                <div className="h-52 flex items-center justify-center text-text-muted font-mono text-xs">
                   INSUFFICIENT SAMPLES FOR CURVE VISUALIZATION
                 </div>
               )}
             </div>
 
-            {/* Speed Profile Chart */}
-            <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-2">
-              <div className="flex items-center justify-between border-b border-surface-container-highest/60 pb-2 font-label-telemetry text-[11px]">
-                <span className="text-on-surface font-bold uppercase">GROUND SPEED PROFILE (M/S)</span>
-                <span className="text-primary font-bold">PEAK: {maxSpeed} M/S</span>
+            {/* Groundspeed Profile Chart */}
+            <div className="bg-surface p-5 rounded-xl border border-border space-y-3">
+              <div className="flex items-center justify-between border-b border-border/60 pb-3 font-mono text-xs">
+                <span className="font-sans font-bold text-sm text-text-primary uppercase tracking-wider">
+                  GROUNDSPEED PROFILE (M/S)
+                </span>
+                <span className="text-info font-bold">PEAK: {maxSpeed} M/S</span>
               </div>
 
               {telemetrySamples.length > 1 ? (
-                <div className="h-48 w-full relative flex items-center justify-center">
+                <div className="h-52 w-full relative flex items-center justify-center p-2 bg-surface-elevated/40 rounded-lg border border-border/60">
                   <svg className="w-full h-full overflow-visible" viewBox="0 0 500 180" preserveAspectRatio="none">
                     <polyline
                       fill="none"
-                      stroke="#3b82f6"
+                      stroke="#79AACB"
                       strokeWidth="2.5"
                       points={createSvgPoints(speeds, 500, 180)}
                     />
                   </svg>
                 </div>
               ) : (
-                <div className="h-48 flex items-center justify-center text-on-surface-variant font-label-telemetry text-xs">
+                <div className="h-52 flex items-center justify-center text-text-muted font-mono text-xs">
                   INSUFFICIENT SAMPLES FOR SPEED PROFILE
                 </div>
               )}
             </div>
 
             {/* Battery Discharge Curve */}
-            <div className="col-span-1 lg:col-span-2 bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-2">
-              <div className="flex items-center justify-between border-b border-surface-container-highest/60 pb-2 font-label-telemetry text-[11px]">
-                <span className="text-on-surface font-bold uppercase">4S BATTERY DISCHARGE PROFILE (VOLTS)</span>
-                <span className="text-primary-fixed font-bold">CUTOFF THRESHOLD: 14.0V</span>
+            <div className="col-span-1 lg:col-span-2 bg-surface p-5 rounded-xl border border-border space-y-3">
+              <div className="flex items-center justify-between border-b border-border/60 pb-3 font-mono text-xs">
+                <span className="font-sans font-bold text-sm text-text-primary uppercase tracking-wider">
+                  4S BATTERY DISCHARGE PROFILE (VOLTS)
+                </span>
+                <span className="text-warning font-bold">CUTOFF THRESHOLD: 14.0V</span>
               </div>
 
               {telemetrySamples.length > 1 ? (
-                <div className="h-44 w-full relative flex items-center justify-center">
+                <div className="h-48 w-full relative flex items-center justify-center p-2 bg-surface-elevated/40 rounded-lg border border-border/60">
                   <svg className="w-full h-full overflow-visible" viewBox="0 0 1000 160" preserveAspectRatio="none">
                     <polyline
                       fill="none"
-                      stroke="#eab308"
+                      stroke="#DDB66A"
                       strokeWidth="2.5"
                       points={createSvgPoints(voltages, 1000, 160, 13.0, 16.8)}
                     />
                   </svg>
                 </div>
               ) : (
-                <div className="h-44 flex items-center justify-center text-on-surface-variant font-label-telemetry text-xs">
+                <div className="h-48 flex items-center justify-center text-text-muted font-mono text-xs">
                   INSUFFICIENT VOLTAGE SAMPLES
                 </div>
               )}
@@ -245,4 +265,3 @@ export const FlightAnalyticsPage: React.FC = () => {
     </div>
   );
 };
-

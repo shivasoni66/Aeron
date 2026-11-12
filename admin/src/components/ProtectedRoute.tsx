@@ -1,7 +1,6 @@
 import React from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LoginPage } from '../pages/LoginPage';
 import { AccessDeniedPage } from '../pages/AccessDeniedPage';
 
 export const ProtectedRoute: React.FC = () => {
@@ -19,7 +18,7 @@ export const ProtectedRoute: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    return <LoginPage />;
+    return <Navigate to="/login" replace />;
   }
 
   if (!isAdmin) {

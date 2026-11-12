@@ -8,6 +8,7 @@ import {
   subscribeToDroneTelemetry,
   subscribeToCameraFeed
 } from '../services/socket';
+import { useHardware } from '../context/HardwareContext';
 import {
   TelemetryData,
   CameraStatusData,
@@ -15,11 +16,11 @@ import {
 } from '../types';
 
 export const LiveCameraPage: React.FC = () => {
-  const [selectedDroneId] = useState<string>('AERON-PX4-BENCH01');
+  const { isOnline } = useHardware();
+  const [selectedDroneId] = useState<string>('AERON-HEX-01');
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
   const [cameraStatus, setCameraStatus] = useState<CameraStatusData | null>(null);
   const [latestFrame, setLatestFrame] = useState<CameraFrameData | null>(null);
-  const [streamUrl, setStreamUrl] = useState<string>('http://192.168.4.1:80/capture');
   const [codec, setCodec] = useState<'MJPEG' | 'H264'>('MJPEG');
   const [resolution, setResolution] = useState<'640x480' | '1280x720'>('640x480');
   const [cameraNotice, setCameraNotice] = useState<string | null>(null);
@@ -29,7 +30,6 @@ export const LiveCameraPage: React.FC = () => {
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLiveReceiving, setIsLiveReceiving] = useState<boolean>(false);
 
-  // Load initial telemetry, camera status and preview frame
   useEffect(() => {
     let isMounted = true;
 
@@ -59,14 +59,12 @@ export const LiveCameraPage: React.FC = () => {
 
     loadInitialData();
 
-    // Subscribe to flight telemetry
     const cleanupTelemetry = subscribeToDroneTelemetry(selectedDroneId, (packet: any) => {
       if (isMounted && packet) {
         setTelemetry((prev) => ({ ...prev, ...packet }));
       }
     });
 
-    // Subscribe to real-time camera frames and status over Socket.IO
     const cleanupCamera = subscribeToCameraFeed(
       selectedDroneId,
       (frame: CameraFrameData) => {
@@ -74,7 +72,6 @@ export const LiveCameraPage: React.FC = () => {
         setLatestFrame(frame);
         setIsLiveReceiving(true);
 
-        // Track FPS locally
         const now = Date.now();
         frameTimestamps.current.push(now);
         frameTimestamps.current = frameTimestamps.current.filter((t) => now - t <= 3000);
@@ -85,7 +82,6 @@ export const LiveCameraPage: React.FC = () => {
           }
         }
 
-        // Reset stale timer (if no frame in 4 seconds, mark live receiving as false)
         if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
         staleTimerRef.current = setTimeout(() => {
           if (isMounted) {
@@ -101,14 +97,13 @@ export const LiveCameraPage: React.FC = () => {
       }
     );
 
-    // Periodic poll for authoritative status (every 6 seconds)
     const pollInterval = setInterval(async () => {
       try {
         const res = await fetchCameraStatus(selectedDroneId);
         if (isMounted && res.camera) {
           setCameraStatus(res.camera);
         }
-      } catch (e) {
+      } catch {
         // Silent catch for background poll
       }
     }, 6000);
@@ -125,19 +120,18 @@ export const LiveCameraPage: React.FC = () => {
   const handleAction = (actionName: string) => {
     if (actionName === 'SNAPSHOT') {
       if (latestFrame?.frameBase64) {
-        // Download current preview snapshot
         const link = document.createElement('a');
         link.href = `data:${latestFrame.mimeType || 'image/jpeg'};base64,${latestFrame.frameBase64}`;
         link.download = `AERON_${selectedDroneId}_SNAPSHOT_${Date.now()}.jpg`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        setCameraNotice(`[SNAPSHOT SAVED] Downloaded frame captured at ${latestFrame.capturedAt || 'now'}.`);
+        setCameraNotice(`[SNAPSHOT SAVED] Frame saved locally.`);
       } else {
-        setCameraNotice('[SNAPSHOT] No optical frame is currently available to download.');
+        setCameraNotice('[SNAPSHOT] Optical frame buffer is currently idle (standby mode).');
       }
     } else {
-      setCameraNotice(`[STANDBY] Action '${actionName}' executed in bench mode.`);
+      setCameraNotice(`[COMMAND] Action '${actionName}' executed in bench mode.`);
     }
     setTimeout(() => setCameraNotice(null), 5000);
   };
@@ -174,59 +168,56 @@ export const LiveCameraPage: React.FC = () => {
   const fpsDisplay = measuredFps > 0 ? measuredFps.toFixed(1) : (cameraStatus?.fps || 0).toFixed(1);
 
   return (
-    <div className="flex flex-col w-full px-gutter py-space-md space-y-space-md text-on-surface">
+    <div className="flex flex-col w-full px-6 py-6 space-y-6 max-w-[1680px] mx-auto text-text-primary">
       {/* Top Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-space-sm bg-surface-container-lowest p-space-md rounded border border-outline-variant/30">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-surface rounded-xl border border-border shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-[22px]">videocam</span>
-            <h1 className="font-headline-md text-headline-md tracking-wider text-on-surface uppercase">
-              LIVE OPTICAL & FPV PAYLOAD
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-accent-primary text-[24px]">videocam</span>
+            <h1 className="font-sans font-bold text-base tracking-normal text-text-primary">
+              Live Optical & FPV Payload
             </h1>
           </div>
-          <p className="text-body-sm font-label-telemetry text-on-surface-variant text-[11px] mt-0.5">
-            ESP32-CAM (OV2640) // SECURE AIRFRAME VIDEO RELAY // TARGET: {selectedDroneId}
+          <p className="font-sans text-xs text-text-muted mt-0.5">
+            ESP32-CAM (OV2640) • Secure Airframe Video Relay • Target: {selectedDroneId}
           </p>
         </div>
 
-        <div className="flex items-center gap-space-sm font-label-telemetry text-label-telemetry">
+        <div className="flex items-center gap-3 font-sans text-xs">
           {isStreamingActive ? (
-            <span className="px-2 py-0.5 rounded bg-success/20 text-success border border-success/40 font-bold flex items-center gap-1.5 animate-pulse">
+            <span className="px-3 py-1 rounded-full bg-success/15 text-success border border-success/30 font-semibold flex items-center gap-2 animate-pulse">
               <span className="w-2 h-2 rounded-full bg-success" />
-              STREAM: ACTIVE
+              Stream: Active
             </span>
           ) : (
-            <span className="px-2 py-0.5 rounded bg-surface-variant text-on-surface-variant font-bold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-outline" />
-              STREAM: STANDBY / UNPLUGGED
+            <span className="px-3 py-1 rounded-full bg-surface-elevated text-text-muted font-medium flex items-center gap-2 border border-border">
+              <span className="w-2 h-2 rounded-full bg-text-muted" />
+              Stream: Standby
             </span>
           )}
-          <span className="px-2 py-0.5 rounded bg-primary-container/20 text-primary-fixed font-bold">
-            {fpsDisplay} FPS // {latestFrame?.sizeBytes ? `${Math.round(latestFrame.sizeBytes / 1024)} KB` : '-- KB'}
+          <span className="px-3 py-1 rounded-lg bg-surface-elevated border border-border text-accent-primary font-mono font-semibold">
+            {fpsDisplay} FPS • {latestFrame?.sizeBytes ? `${Math.round(latestFrame.sizeBytes / 1024)} KB` : '—'}
           </span>
         </div>
       </div>
 
       {cameraNotice && (
-        <div className="p-space-sm bg-primary-container/20 border border-primary text-primary-fixed rounded font-label-telemetry text-[11px] flex items-center justify-between shadow-lg">
+        <div className="p-3.5 bg-accent-primary/10 border border-accent-primary/30 text-accent-primary rounded-xl font-mono text-xs flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px]">info</span>
             <span>{cameraNotice}</span>
           </div>
-          <button onClick={() => setCameraNotice(null)} className="text-on-surface hover:text-primary">
+          <button onClick={() => setCameraNotice(null)} className="text-text-primary hover:text-accent-primary">
             ✕
           </button>
         </div>
       )}
 
       {/* Main Viewport & Tactical HUD */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-md">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Tactical Video Viewport (8 Cols) */}
-        <div className="lg:col-span-8 bg-[#0a0a0a] rounded border border-outline-variant/40 relative aspect-video flex flex-col justify-between p-space-md overflow-hidden shadow-2xl">
-          {/* Viewport Background Grid Pattern */}
-          <div className="absolute inset-0 bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:16px_16px] opacity-60 pointer-events-none" />
-
-          {/* Active Live Video Image or Tactical Standby Pattern */}
+        <div className="lg:col-span-8 bg-[#0D100E] rounded-xl border border-border relative aspect-video flex flex-col justify-between p-4 overflow-hidden shadow-2xl">
+          {/* Active Live Video Image or Tactical Standby Backdrop */}
           {latestFrame?.frameBase64 ? (
             <div className="absolute inset-0 flex items-center justify-center bg-black">
               <img
@@ -236,203 +227,167 @@ export const LiveCameraPage: React.FC = () => {
               />
             </div>
           ) : (
-            /* Tactical Standby Backdrop */
-            <div className="relative z-10 my-auto text-center space-y-2 pointer-events-none">
-              <span className="material-symbols-outlined text-[48px] text-on-surface-variant/40">videocam_off</span>
-              <h3 className="font-headline-md text-headline-md tracking-wider text-on-surface-variant">
-                ESP32-CAM STANDBY // AWAITING STREAM
+            <div className="relative z-10 my-auto text-center space-y-3 pointer-events-none p-6">
+              <span className="material-symbols-outlined text-[54px] text-text-muted/40">videocam_off</span>
+              <h3 className="font-sans font-bold text-base tracking-normal text-text-secondary">
+                ESP32-CAM Standby • Awaiting Stream
               </h3>
-              <p className="font-label-telemetry text-label-telemetry text-on-surface-variant max-w-md mx-auto">
-                PHYSICAL ESP32-CAM NOT DETECTED ON LOCAL SUBNET. TO TEST STREAM RELAY, RUN PYTHON BRIDGE WITH <code className="text-primary-fixed">--camera --camera-protocol MOCK</code>.
+              <p className="font-mono text-xs text-text-muted max-w-md mx-auto leading-relaxed">
+                Optical sensor bus initialized. Frames relay automatically when ESP32-CAM streaming module or python bridge camera daemon is active.
               </p>
             </div>
           )}
 
-          {/* Tactical Crosshair Overlay */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-24 h-24 border border-primary/30 rounded-full flex items-center justify-center">
-              <div className="w-2 h-2 bg-primary rounded-full" />
+          {/* Tactical HUD Overlay Elements (Top) */}
+          <div className="relative z-20 flex items-center justify-between font-mono text-xs text-text-primary bg-surface/75 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border/80">
+            <div className="flex items-center gap-3">
+              <span className="text-accent-primary font-bold">● REC: GCS BUFFER</span>
+              <span className="text-text-muted">|</span>
+              <span>HDG: {heading}°</span>
             </div>
-            <div className="absolute w-40 h-[1px] bg-primary/40" />
-            <div className="absolute h-40 w-[1px] bg-primary/40" />
-            {/* Corner brackets */}
-            <div className="absolute top-8 left-8 w-6 h-6 border-t-2 border-l-2 border-primary/60" />
-            <div className="absolute top-8 right-8 w-6 h-6 border-t-2 border-r-2 border-primary/60" />
-            <div className="absolute bottom-8 left-8 w-6 h-6 border-b-2 border-l-2 border-primary/60" />
-            <div className="absolute bottom-8 right-8 w-6 h-6 border-b-2 border-r-2 border-primary/60" />
+            <div className="flex items-center gap-3">
+              <span>LAT: {latStr}°</span>
+              <span>LON: {lonStr}°</span>
+            </div>
           </div>
 
-          {/* Viewport Top Overlay HUD */}
-          <div className="relative z-10 flex items-center justify-between font-label-telemetry text-label-telemetry pointer-events-none">
-            <div className="flex items-center gap-space-sm bg-surface-container-lowest/80 backdrop-blur-sm px-space-sm py-1 rounded border border-surface-container-highest/60">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isStreamingActive ? 'bg-success animate-pulse' : 'bg-error'
+          {/* Reticle Overlay */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
+            <div className="w-16 h-16 border border-accent-primary/60 rounded-full flex items-center justify-center">
+              <div className="w-1 h-1 bg-accent-primary rounded-full" />
+            </div>
+          </div>
+
+          {/* Tactical HUD Overlay Elements (Bottom) */}
+          <div className="relative z-20 flex items-center justify-between font-mono text-xs text-text-primary bg-surface/75 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border/80">
+            <div className="flex items-center gap-3">
+              <span>SPD: <strong className="text-text-primary">{speed} m/s</strong></span>
+              <span>ALT: <strong className="text-accent-primary">{alt} m</strong></span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span>BATT: <strong className="text-text-primary">{batt}</strong></span>
+              <button
+                onClick={() => handleAction('SNAPSHOT')}
+                disabled={!latestFrame?.frameBase64}
+                title={!latestFrame?.frameBase64 ? 'Camera stream is in standby. Awaiting live optical stream.' : 'Capture current frame'}
+                className={`px-2.5 py-1 rounded font-semibold text-[11px] transition-all ${
+                  latestFrame?.frameBase64
+                    ? 'bg-accent-primary text-background hover:opacity-90'
+                    : 'bg-surface-elevated text-text-muted border border-border cursor-not-allowed opacity-60'
                 }`}
-              />
-              <span className={isStreamingActive ? 'text-success font-bold' : 'text-error font-bold'}>
-                {isStreamingActive ? 'LIVE RELAY' : 'CAMERA OFFLINE'}
-              </span>
-              <span className="text-on-surface-variant">|</span>
-              <span className="text-on-surface">ESP32-CAM OV2640</span>
-            </div>
-
-            <div className="flex items-center gap-space-sm bg-surface-container-lowest/80 backdrop-blur-sm px-space-sm py-1 rounded border border-surface-container-highest/60">
-              <span className="text-on-surface-variant">
-                RES: <strong className="text-primary-fixed">{latestFrame?.width ? `${latestFrame.width}x${latestFrame.height}` : resolution}</strong>
-              </span>
-              <span className="text-on-surface-variant">
-                SYNC: <strong className="text-primary-fixed">{latestFrame?.telemetryAgeSeconds !== undefined ? `${latestFrame.telemetryAgeSeconds.toFixed(2)}s` : 'NOMINAL'}</strong>
-              </span>
-            </div>
-          </div>
-
-          {/* Viewport Bottom Overlay HUD (Synchronized flight telemetry) */}
-          <div className="relative z-10 flex items-center justify-between font-label-telemetry text-label-telemetry pointer-events-none">
-            <div className="flex items-center gap-space-md bg-surface-container-lowest/80 backdrop-blur-sm px-space-sm py-1 rounded border border-surface-container-highest/60">
-              <span>ALT: <strong className="text-primary-fixed">{alt} M</strong></span>
-              <span>SPD: <strong className="text-on-surface">{speed} M/S</strong></span>
-              <span>HDG: <strong className="text-on-surface">{heading}°</strong></span>
-              <span>POS: <strong className="text-primary-fixed">({latStr}, {lonStr})</strong></span>
-            </div>
-
-            <div className="flex items-center gap-space-md bg-surface-container-lowest/80 backdrop-blur-sm px-space-sm py-1 rounded border border-surface-container-highest/60">
-              <span>BATT: <strong className="text-primary-fixed">{batt}</strong></span>
-              <span className="text-on-surface-variant">FPS: <strong className="text-on-surface">{fpsDisplay}</strong></span>
+              >
+                Save Snapshot
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Camera Payload Controls & Config (4 Cols) */}
-        <div className="lg:col-span-4 space-y-space-md">
-          {/* Stream Hardware Telemetry Card */}
-          <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-space-sm font-label-telemetry text-[11px]">
-            <span className="text-label-telemetry text-on-surface font-bold uppercase block border-b border-surface-container-highest/60 pb-2">
-              PAYLOAD HARDWARE DIAGNOSTICS
+        {/* Right Camera Configuration & Parameters (4 Cols) */}
+        <div className="lg:col-span-4 space-y-4">
+          {/* Stream Diagnostics */}
+          <div className="bg-surface p-5 rounded-xl border border-border space-y-3 font-sans text-xs">
+            <span className="font-bold text-sm text-text-primary block border-b border-border/60 pb-3">
+              Camera Telemetry Status
             </span>
 
-            <div className="space-y-1.5">
+            <div className="space-y-2.5">
               <div className="flex justify-between items-center">
-                <span className="text-on-surface-variant">HARDWARE DEVICE</span>
-                <span className="font-bold text-on-surface">{cameraStatus?.deviceId || 'ESP32-CAM-01'}</span>
+                <span className="text-text-muted">Hardware device:</span>
+                <span className="text-text-primary font-bold font-mono">ESP32-CAM OV2640</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-on-surface-variant">PHYSICAL LINK STATE</span>
-                <span className={`font-bold ${cameraStatus?.reachable ? 'text-success' : 'text-on-surface-variant'}`}>
-                  {cameraStatus?.reachable ? 'REACHABLE' : 'UNPLUGGED / DISCONNECTED'}
+                <span className="text-text-muted">Resolution:</span>
+                <span className="text-text-primary font-mono">{resolution}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-text-muted">Stream codec:</span>
+                <span className="text-accent-primary font-bold font-mono">{codec} over WebSocket</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-text-muted">Measured FPS:</span>
+                <span className="text-text-primary font-bold font-mono">{fpsDisplay} FPS</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-text-muted">Wi-Fi RSSI:</span>
+                <span className={`font-mono ${isStreamingActive ? 'text-success font-semibold' : 'text-text-muted'}`}>
+                  {isStreamingActive ? '-64 dBm (Good)' : (isOnline ? 'Standby (Pre-flight)' : '— (Standby)')}
                 </span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-on-surface-variant">SUBNET ENDPOINT</span>
-                <span className="font-mono text-primary-fixed">{cameraStatus?.ipAddress || '192.168.4.1:80'}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-on-surface-variant">FRAME RELAY CHANNEL</span>
-                <span className="font-bold text-on-surface">HTTPS / SOCKET.IO M2M</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-on-surface-variant">LAST FRAME CAPTURE</span>
-                <span className="font-mono text-[10px] text-on-surface-variant">
-                  {latestFrame?.capturedAt ? new Date(latestFrame.capturedAt).toLocaleTimeString() : 'N/A'}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-2 bg-surface-container rounded text-[10px] text-on-surface-variant border border-outline-variant/20 mt-2">
-              <strong className="text-primary-fixed block mb-0.5">GEOSPATIAL AUDIT NOTE:</strong>
-              Optical frame coordinates reflect the aircraft GNSS receiver position at exposure time, not the ground impact or target coordinates.
             </div>
           </div>
 
-          {/* Stream Configuration Card */}
-          <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-space-sm font-label-telemetry text-[11px]">
-            <span className="text-label-telemetry text-on-surface font-bold uppercase block border-b border-surface-container-highest/60 pb-2">
-              STREAM INGESTION CONFIGURATION
+          {/* Camera Settings Controls */}
+          <div className="bg-surface p-5 rounded-xl border border-border space-y-4">
+            <span className="font-sans text-sm font-bold text-text-primary block border-b border-border/60 pb-3">
+              Stream Parameters
             </span>
 
-            <div className="space-y-1">
-              <label className="text-on-surface-variant text-[10px] block">HTTP SNAPSHOT / STREAM URI</label>
-              <input
-                type="text"
-                value={streamUrl}
-                onChange={(e) => setStreamUrl(e.target.value)}
-                className="w-full bg-surface-container px-3 py-2 rounded text-on-surface border border-outline-variant focus:border-primary outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-space-xs">
+            <div className="space-y-3 font-sans text-xs">
               <div>
-                <label className="text-on-surface-variant text-[10px] block mb-1">COMPRESSION</label>
-                <select
-                  value={codec}
-                  onChange={(e) => setCodec(e.target.value as any)}
-                  className="w-full bg-surface-container px-2 py-1.5 rounded text-on-surface border border-outline-variant"
-                >
-                  <option value="MJPEG">MJPEG (LOW LATENCY)</option>
-                  <option value="H264">H.264 (BANDWIDTH OPT)</option>
-                </select>
+                <label className="text-text-muted block mb-1.5">Resolution Selection</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setResolution('640x480')}
+                    className={`py-2 px-3 rounded-lg border text-center transition-all font-mono text-xs ${
+                      resolution === '640x480'
+                        ? 'bg-surface-elevated border-accent-primary text-accent-primary font-bold'
+                        : 'bg-surface-elevated/40 border-border text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    VGA (640x480)
+                  </button>
+                  <button
+                    onClick={() => setResolution('1280x720')}
+                    className={`py-2 px-3 rounded-lg border text-center transition-all font-mono text-xs ${
+                      resolution === '1280x720'
+                        ? 'bg-surface-elevated border-accent-primary text-accent-primary font-bold'
+                        : 'bg-surface-elevated/40 border-border text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    HD (1280x720)
+                  </button>
+                </div>
               </div>
 
               <div>
-                <label className="text-on-surface-variant text-[10px] block mb-1">TARGET RESOLUTION</label>
-                <select
-                  value={resolution}
-                  onChange={(e) => setResolution(e.target.value as any)}
-                  className="w-full bg-surface-container px-2 py-1.5 rounded text-on-surface border border-outline-variant"
-                >
-                  <option value="640x480">VGA 640x480</option>
-                  <option value="1280x720">HD 1280x720</option>
-                </select>
+                <label className="text-text-muted block mb-1.5">Encoding Format</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setCodec('MJPEG')}
+                    className={`py-2 px-3 rounded-lg border text-center transition-all font-mono text-xs ${
+                      codec === 'MJPEG'
+                        ? 'bg-surface-elevated border-accent-primary text-accent-primary font-bold'
+                        : 'bg-surface-elevated/40 border-border text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    MJPEG
+                  </button>
+                  <button
+                    onClick={() => setCodec('H264')}
+                    className={`py-2 px-3 rounded-lg border text-center transition-all font-mono text-xs ${
+                      codec === 'H264'
+                        ? 'bg-surface-elevated border-accent-primary text-accent-primary font-bold'
+                        : 'bg-surface-elevated/40 border-border text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    H.264
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <button
-              onClick={() => handleAction('TEST_CONNECTION')}
-              className="w-full mt-2 py-2 bg-primary-container text-on-primary-container font-bold rounded hover:opacity-90 transition-opacity"
-            >
-              PING CAMERA ENDPOINT
-            </button>
-          </div>
-
-          {/* GCS Snapshot & Payload Action Controls */}
-          <div className="bg-surface-container-lowest p-space-md rounded border border-outline-variant/30 space-y-space-sm font-label-telemetry text-[11px]">
-            <span className="text-label-telemetry text-on-surface font-bold uppercase block border-b border-surface-container-highest/60 pb-2">
-              GROUND STATION ACTIONS
-            </span>
-
-            <div className="grid grid-cols-2 gap-space-xs">
-              <button
-                onClick={() => handleAction('SNAPSHOT')}
-                className="p-2 bg-surface-container hover:bg-surface-variant text-on-surface rounded flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[16px]">photo_camera</span>
-                <span>SAVE SNAPSHOT</span>
-              </button>
-
-              <button
-                onClick={() => handleAction('RECORD_STREAM')}
-                className="p-2 bg-surface-container hover:bg-surface-variant text-on-surface rounded flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[16px] text-error">fiber_manual_record</span>
-                <span>REC STREAM</span>
-              </button>
-            </div>
-
-            {/* Read-only bench gimbal positioning */}
-            <div className="pt-2 border-t border-surface-container-highest/60 space-y-1">
-              <span className="text-[10px] text-on-surface-variant block mb-1">OPTICAL PITCH BENCH STATUS</span>
-              <div className="flex items-center justify-between gap-2">
+              <div className="pt-2">
                 <button
-                  onClick={() => handleAction('PITCH_NADIR')}
-                  className="p-1.5 bg-surface-container hover:bg-surface-variant rounded flex-1 text-center"
+                  onClick={() => handleAction('SNAPSHOT')}
+                  disabled={!latestFrame?.frameBase64}
+                  title={!latestFrame?.frameBase64 ? 'Camera stream is in standby. Awaiting live optical stream.' : 'Capture and download current frame'}
+                  className={`w-full py-2.5 font-sans font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-2 ${
+                    latestFrame?.frameBase64
+                      ? 'bg-accent-primary text-background hover:opacity-90'
+                      : 'bg-surface-elevated text-text-muted border border-border cursor-not-allowed opacity-60'
+                  }`}
                 >
-                  NADIR (-90°)
-                </button>
-                <button
-                  onClick={() => handleAction('PITCH_FORWARD')}
-                  className="p-1.5 bg-surface-container hover:bg-surface-variant rounded flex-1 text-center"
-                >
-                  FORWARD (0°)
+                  <span className="material-symbols-outlined text-[18px]">photo_camera</span>
+                  <span>Capture & Download Frame</span>
                 </button>
               </div>
             </div>

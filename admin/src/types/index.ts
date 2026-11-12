@@ -188,5 +188,6 @@ export interface CameraFrameData {
   telemetryAlt?: number;
   telemetryHeading?: number;
   telemetryAgeSeconds?: number;
+  isSimulated?: boolean;
 }
 
