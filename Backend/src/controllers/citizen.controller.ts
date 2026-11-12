@@ -99,10 +99,11 @@ export const citizenController = {
         metadata: { category: validated.category }
       });
 
-      // Attempt to broadcast to citizen's private socket room
+      // Attempt to broadcast to citizen's private socket room and operations mesh
       try {
         const io = getSocketServer();
         io.to(`citizen:user:${citizenId.toString()}`).emit('citizen:report_created', newReport);
+        io.emit('citizen:report_created', newReport);
       } catch (_) {
         // Socket broadcast optional in tests / disconnected state
       }

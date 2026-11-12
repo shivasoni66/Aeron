@@ -39,5 +39,9 @@ managerRouter.get('/analytics/overview', ManagerController.getAnalyticsOverview)
 // Aircraft Assignment Registry
 managerRouter.get('/drones/available', ManagerController.getAvailableDrones);
 
+// Citizen Civic Reports Intake & Triage
+managerRouter.get('/citizen-reports', ManagerController.getCitizenReports);
+managerRouter.patch('/citizen-reports/:reportId', ManagerController.updateCitizenReport);
+
 export { managerRouter };
 

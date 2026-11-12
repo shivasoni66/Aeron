@@ -1043,4 +1043,108 @@ export class ManagerController {
       res.status(500).json({ status: 'error', code: 'DRONES_FETCH_FAILED', message: msg });
     }
   }
+
+  /**
+   * GET /api/v1/manager/citizen-reports
+   * List citizen issue reports with filtering, pagination, and media assets.
+   */
+  public static async getCitizenReports(req: Request, res: Response): Promise<void> {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 15));
+      const skip = (page - 1) * limit;
+
+      const query: Record<string, unknown> = {};
+      if (req.query.category) query.category = req.query.category;
+      if (req.query.status) query.status = req.query.status;
+
+      const [reports, total] = await Promise.all([
+        CitizenReport.find(query)
+          .sort({ submittedAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('citizenId', 'name email reputationScore')
+          .populate('mediaAssets')
+          .lean(),
+        CitizenReport.countDocuments(query)
+      ]);
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          reports,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit) || 1
+          }
+        }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'CITIZEN_REPORTS_FETCH_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * PATCH /api/v1/manager/citizen-reports/:reportId
+   * Updates report status, verification stage, or assigns to a mission.
+   */
+  public static async updateCitizenReport(req: Request, res: Response): Promise<void> {
+    try {
+      const reportId = String(req.params.reportId);
+      const isOid = mongoose.isValidObjectId(reportId);
+      const report = await CitizenReport.findOne(
+        isOid ? { $or: [{ _id: reportId }, { reportId: reportId.toUpperCase() }] } : { reportId: reportId.toUpperCase() }
+      );
+
+      if (!report) {
+        res.status(404).json({ status: 'error', code: 'REPORT_NOT_FOUND', message: `Report '${reportId}' not found` });
+        return;
+      }
+
+      const { status, currentStage, duplicateOf } = req.body;
+      const validStatuses = [
+        'SUBMITTED',
+        'MUNICIPAL_REVIEW',
+        'INSPECTION_SCHEDULED',
+        'AERIAL_VERIFIED',
+        'PUBLIC_WORKS_ASSIGNED',
+        'RESOLVED',
+        'REJECTED'
+      ];
+
+      if (status && !validStatuses.includes(status)) {
+        res.status(400).json({
+          status: 'error',
+          code: 'INVALID_STATUS',
+          message: `Invalid status '${status}'. Must be one of: ${validStatuses.join(', ')}`
+        });
+        return;
+      }
+
+      if (status) report.status = status;
+      if (typeof currentStage === 'number') report.currentStage = currentStage;
+      if (duplicateOf && mongoose.isValidObjectId(duplicateOf)) report.duplicateOf = duplicateOf;
+
+      report.reviewedAt = new Date();
+      if (req.user?.id && mongoose.isValidObjectId(req.user.id)) {
+        report.reviewedBy = new mongoose.Types.ObjectId(req.user.id);
+      }
+
+      await report.save();
+
+      safeEmit('citizen:report_updated', report);
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Citizen report updated successfully',
+        data: { report }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'CITIZEN_REPORT_UPDATE_FAILED', message: msg });
+    }
+  }
 }
