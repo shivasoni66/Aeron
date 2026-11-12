@@ -11,7 +11,8 @@ from .mavlink.parser import MAVLinkParser
 from .mavlink.health import SubsystemHealthTracker
 from .mavlink.telemetry import TelemetryAggregator
 from .transport.backend_client import BackendTransportClient
-from .simulator import DroneTelemetrySimulator
+from .simulator import DroneTelemetrySimulator, SCENARIOS
+from .simulator_server import start_simulator_http_server
 
 # Camera subsystem
 from .camera.config import CameraConfig, camera_config
@@ -190,6 +191,8 @@ def main():
     parser.add_argument("--drone-id", default=config.drone_id, help="Airframe identifier (default from config)")
     parser.add_argument("--backend-url", default=config.backend_ingest_url, help="Backend telemetry ingestion URL")
     parser.add_argument("--simulator", action="store_true", help="Force software simulation mode")
+    parser.add_argument("--scenario", default="SLOW_ROUTE", choices=SCENARIOS, help="Predefined simulation scenario")
+    parser.add_argument("--simulator-server-port", type=int, default=5050, help="Port for local simulation control HTTP API (default: 5050)")
     parser.add_argument("--camera", action="store_true", help="Enable ESP32-CAM video acquisition and relay")
     parser.add_argument("--camera-protocol", default=camera_config.protocol, choices=["HTTP_JPEG", "HTTP_MJPEG", "MOCK"], help="Camera acquisition protocol")
     parser.add_argument("--camera-host", default=camera_config.host, help="ESP32-CAM IP or hostname")
@@ -274,7 +277,14 @@ def main():
     if args.simulator or config.simulator_enabled:
         simulator = DroneTelemetrySimulator(
             drone_id=args.drone_id,
-            rate_hz=config.simulator_rate_hz
+            rate_hz=config.simulator_rate_hz,
+            scenario=args.scenario
+        )
+        # Start local simulation control HTTP server on background thread
+        start_simulator_http_server(
+            simulator=simulator,
+            port=args.simulator_server_port,
+            camera_reader=camera_reader
         )
         run_simulation_loop(simulator, client, camera_reader, camera_client)
         return
