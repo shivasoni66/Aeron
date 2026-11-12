@@ -82,7 +82,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('CITIZEN SERVICES // SECURE ACCESS'), findsOneWidget);
+      expect(find.text('CITIZEN SERVICES • SECURE ACCESS'), findsOneWidget);
 
       final submitBtn = find.text('SIGN IN TO CITIZEN SERVICES');
       expect(submitBtn, findsOneWidget);
@@ -101,7 +101,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('CITIZEN SERVICES // PUBLIC REGISTRATION'), findsOneWidget);
+      expect(find.text('CITIZEN SERVICES • PUBLIC REGISTRATION'), findsOneWidget);
 
       final submitBtn = find.text('CREATE CITIZEN ACCOUNT');
       expect(submitBtn, findsOneWidget);
