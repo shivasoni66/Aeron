@@ -97,3 +97,28 @@ export const subscribeToManagerBroadcasts = (callbacks: {
     if (callbacks.onOutcomePublished) s.off('outcome:published', callbacks.onOutcomePublished);
   };
 };
+
+/**
+ * Subscribes to live telemetry stream for a specific airframe.
+ */
+export const subscribeToDroneTelemetry = (
+  droneId: string,
+  onTelemetry: (data: unknown) => void
+): (() => void) => {
+  const s = connectSocket();
+  const roomName = `drone:telemetry:${droneId}`;
+
+  s.emit('join_room', { room: roomName }, (res: { success: boolean; error?: string }) => {
+    if (!res?.success) {
+      console.warn(`[Socket.IO] Failed to subscribe to ${roomName}:`, res?.error);
+    }
+  });
+
+  s.on(`telemetry:${droneId}`, onTelemetry);
+  s.on('telemetry', onTelemetry);
+
+  return () => {
+    s.off(`telemetry:${droneId}`, onTelemetry);
+    s.off('telemetry', onTelemetry);
+  };
+};

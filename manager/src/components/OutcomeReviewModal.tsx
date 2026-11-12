@@ -51,89 +51,87 @@ export const OutcomeReviewModal: React.FC<OutcomeReviewModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="w-full max-w-lg bg-surface-container-low border border-surface-variant rounded-lg p-space-lg shadow-2xl relative">
-        <div className="flex items-center justify-between pb-3 border-b border-surface-variant mb-4">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary-fixed">task_alt</span>
-            <h3 className="font-headline-md text-headline-md text-primary">MISSION OUTCOME REVIEW</h3>
+      <div className="w-full max-w-lg bg-surface border border-border rounded-2xl p-6 shadow-2xl relative text-text-primary">
+        <div className="flex items-center justify-between pb-3 border-b border-border mb-4">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-accent-primary text-[22px]">task_alt</span>
+            <h3 className="font-sans font-bold text-base text-text-primary">MISSION OUTCOME VERIFICATION</h3>
           </div>
-          <button onClick={onClose} className="text-outline hover:text-primary transition-colors">
-            <span className="material-symbols-outlined">close</span>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-surface-elevated text-text-secondary hover:text-text-primary flex items-center justify-center border border-border transition-colors">
+            <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded bg-error-container/30 border border-error/50 text-error font-label-telemetry text-xs flex items-center gap-2">
+          <div className="mb-4 p-3 rounded-xl bg-danger/15 border border-danger/40 text-danger font-mono text-xs flex items-center gap-2">
             <span className="material-symbols-outlined text-[16px]">error</span>
             <span>{error}</span>
           </div>
         )}
 
-        <div className="space-y-3 font-label-telemetry text-xs mb-6">
-          <div className="flex justify-between items-center py-1 border-b border-surface-variant/40">
-            <span className="text-outline">OUTCOME ID</span>
-            <span className="text-primary-fixed font-bold">{outcome.outcomeId}</span>
+        <div className="space-y-3 font-mono text-xs mb-6">
+          <div className="flex justify-between items-center py-1.5 border-b border-border/50">
+            <span className="text-text-muted">OUTCOME ID</span>
+            <span className="text-accent-primary font-bold">{outcome.outcomeId}</span>
           </div>
-          <div className="flex justify-between items-center py-1 border-b border-surface-variant/40">
-            <span className="text-outline">MISSION</span>
-            <span className="text-primary font-bold">{outcome.missionId?.title || 'Unknown Mission'}</span>
+          <div className="flex justify-between items-center py-1.5 border-b border-border/50">
+            <span className="text-text-muted">MISSION</span>
+            <span className="text-text-primary font-bold">{outcome.missionId?.title || 'Unknown Mission'}</span>
           </div>
-          <div className="flex justify-between items-center py-1 border-b border-surface-variant/40">
-            <span className="text-outline">VERTICAL TYPE</span>
-            <span className="text-secondary">{outcome.outcomeType}</span>
+          <div className="flex justify-between items-center py-1.5 border-b border-border/50">
+            <span className="text-text-muted">VERTICAL</span>
+            <span className="text-text-secondary">{outcome.outcomeType}</span>
           </div>
-          <div className="flex justify-between items-center py-1 border-b border-surface-variant/40">
-            <span className="text-outline">CURRENT REVIEW STATUS</span>
-            <span className="px-2 py-0.5 rounded bg-surface-container text-primary-fixed font-bold">
+          <div className="flex justify-between items-center py-1.5 border-b border-border/50">
+            <span className="text-text-muted">REVIEW STATUS</span>
+            <span className="px-2 py-0.5 rounded bg-surface-elevated text-accent-primary font-bold border border-border">
               {outcome.reviewStatus}
             </span>
           </div>
 
           <div className="py-2">
-            <span className="text-outline block mb-1">EXECUTIVE SUMMARY</span>
-            <p className="font-body-sm text-sm text-on-surface bg-surface-container-lowest p-2.5 rounded border border-surface-variant/40">
+            <span className="text-text-muted block mb-1 font-semibold">EXECUTIVE SUMMARY</span>
+            <p className="font-sans text-xs text-text-secondary bg-surface-elevated p-3 rounded-lg border border-border/80 leading-relaxed">
               {outcome.summary}
             </p>
           </div>
 
-          <div className="py-2">
-            <span className="text-outline block mb-1">DETAILED FINDINGS / REASONING</span>
+          <div className="py-1">
+            <label className="text-text-muted block mb-1 font-semibold uppercase">ADD AUDIT FINDINGS / NOTES</label>
             <textarea
-              defaultValue={outcome.findings}
+              rows={2}
+              placeholder="Verification observations, sensory data corroboration..."
+              value={findings}
               onChange={(e) => setFindings(e.target.value)}
-              rows={3}
-              placeholder="Enter verified findings or rejection rationale..."
-              className="w-full px-3 py-2 rounded bg-surface-container-lowest border border-surface-variant text-on-surface focus:border-primary-fixed focus:outline-none resize-none"
+              className="w-full px-3 py-2 rounded-lg bg-surface-elevated border border-border text-text-primary focus:border-accent-primary focus:outline-none resize-none"
             />
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-surface-variant">
+        <div className="pt-3 border-t border-border flex items-center justify-between">
           <button
             onClick={() => handleReview('REJECTED')}
             disabled={isSubmitting}
-            className="px-4 py-2 rounded bg-error-container/30 hover:bg-error-container text-error font-label-pill text-xs font-bold transition-colors disabled:opacity-50"
+            className="px-4 py-2 rounded-lg bg-danger/15 hover:bg-danger/25 text-danger border border-danger/30 font-sans font-bold text-xs transition-colors disabled:opacity-50"
           >
-            REJECT OUTCOME
+            REJECT AUDIT
           </button>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleReview('APPROVED')}
               disabled={isSubmitting}
-              className="px-4 py-2 rounded bg-surface-container-high hover:bg-surface-variant text-on-surface font-label-pill text-xs font-bold transition-colors disabled:opacity-50"
+              className="px-4 py-2 rounded-lg bg-success/15 hover:bg-success/25 text-success border border-success/30 font-sans font-bold text-xs transition-colors disabled:opacity-50"
             >
-              APPROVE FINDINGS
+              APPROVE OUTCOME
             </button>
-
             {outcome.reviewStatus === 'APPROVED' && !outcome.isPublic && (
               <button
                 onClick={handlePublish}
                 disabled={isSubmitting}
-                className="px-5 py-2 rounded-full bg-primary-fixed hover:bg-surface-tint text-on-primary-fixed font-label-pill text-xs font-bold flex items-center gap-1.5 shadow-[0_0_12px_rgba(191,244,46,0.3)] disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-accent-primary text-background font-sans font-bold text-xs hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-[16px]">publish</span>
-                STAGE FOR CITIZEN APP
+                PUBLISH TO PUBLIC FEED
               </button>
             )}
           </div>
@@ -142,4 +140,3 @@ export const OutcomeReviewModal: React.FC<OutcomeReviewModalProps> = ({
     </div>
   );
 };
-

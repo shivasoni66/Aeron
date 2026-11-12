@@ -8,7 +8,8 @@ import {
   MissionOutcomeData,
   AnalyticsOverviewData,
   DroneData,
-  MissionEventData
+  MissionEventData,
+  CitizenReportData
 } from '../types';
 
 // Resolve base origin from environment or default to deployed Render backend
@@ -261,4 +262,35 @@ export const fetchAnalyticsOverview = async (): Promise<AnalyticsOverviewData> =
 // Drone Registry
 export const fetchAvailableDrones = async (): Promise<{ drones: DroneData[] }> => {
   return authenticatedFetch<{ drones: DroneData[] }>('/manager/drones/available');
+};
+
+// Citizen Reports
+export const fetchCitizenReports = async (params?: {
+  status?: string;
+  category?: string;
+  page?: number;
+  limit?: number;
+}): Promise<{ reports: CitizenReportData[]; total: number }> => {
+  const query = new URLSearchParams();
+  if (params?.status) query.append('status', params.status);
+  if (params?.category) query.append('category', params.category);
+  if (params?.page) query.append('page', params.page.toString());
+  if (params?.limit) query.append('limit', params.limit.toString());
+  const queryString = query.toString() ? `?${query.toString()}` : '';
+  return authenticatedFetch<{ reports: CitizenReportData[]; total: number }>(`/manager/citizen-reports${queryString}`);
+};
+
+export const updateCitizenReport = async (
+  reportId: string,
+  payload: Omit<Partial<CitizenReportData>, 'status'> & { status?: string; currentStage?: number; triageNotes?: string; [key: string]: any }
+): Promise<{ report: CitizenReportData }> => {
+  return authenticatedFetch<{ report: CitizenReportData }>(`/manager/citizen-reports/${reportId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+};
+
+// Telemetry
+export const fetchLatestTelemetry = async (droneId: string): Promise<{ telemetry: TelemetryPoint | null }> => {
+  return authenticatedFetch<{ telemetry: TelemetryPoint | null }>(`/telemetry/latest/${droneId}`);
 };

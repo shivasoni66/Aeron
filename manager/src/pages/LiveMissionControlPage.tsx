@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { fetchMissions, fetchMission } from '../services/api';
-import { MissionData, IncidentData } from '../types';
+import { fetchMissions, fetchMission, fetchLatestTelemetry } from '../services/api';
+import { subscribeToDroneTelemetry } from '../services/socket';
+import { MissionData, IncidentData, TelemetryPoint } from '../types';
 import { TacticalMap } from '../components/TacticalMap';
+import { SimulatorControlWidget } from '../components/SimulatorControlWidget';
 
 export const LiveMissionControlPage: React.FC = () => {
   const [missions, setMissions] = useState<MissionData[]>([]);
   const [selectedMissionId, setSelectedMissionId] = useState<string>('');
   const [selectedMission, setSelectedMission] = useState<MissionData | null>(null);
   const [incidents, setIncidents] = useState<IncidentData[]>([]);
+  const [droneTelemetry, setDroneTelemetry] = useState<TelemetryPoint | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [evidenceNote, setEvidenceNote] = useState<string | null>(null);
 
@@ -37,20 +40,63 @@ export const LiveMissionControlPage: React.FC = () => {
 
   const assignedDrone = selectedMission?.assignedDrones?.[0];
 
-  const mapMarkers: { lat: number; lng: number; title: string; type: 'DRONE' | 'INCIDENT' | 'WAYPOINT' | 'TARGET' }[] = incidents.map((inc) => ({
-    lat: inc.location?.coordinates?.[1] || 48.1371,
-    lng: inc.location?.coordinates?.[0] || 11.5761,
+  useEffect(() => {
+    if (!assignedDrone?.droneId) {
+      setDroneTelemetry(null);
+      return;
+    }
+
+    let isMounted = true;
+    fetchLatestTelemetry(assignedDrone.droneId)
+      .then((res: { telemetry: TelemetryPoint | null }) => {
+        if (isMounted && res?.telemetry) {
+          setDroneTelemetry(res.telemetry);
+        }
+      })
+      .catch(() => {});
+
+    const unsubscribe = subscribeToDroneTelemetry(assignedDrone.droneId, (packet: any) => {
+      if (isMounted && packet) {
+        setDroneTelemetry((prev) => ({ ...prev, ...packet }));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [assignedDrone?.droneId]);
+
+  const mapMarkers: {
+    lat: number;
+    lng: number;
+    title: string;
+    type: 'DRONE' | 'INCIDENT' | 'WAYPOINT' | 'TARGET';
+    heading?: number;
+    isSimulated?: boolean;
+  }[] = incidents.map((inc) => ({
+    lat: inc.location?.coordinates?.[1] || 12.9716,
+    lng: inc.location?.coordinates?.[0] || 77.5946,
     title: `${inc.incidentId}: ${inc.description}`,
     type: 'INCIDENT'
   }));
 
-  // Add drone marker if mission has assigned drone
   if (assignedDrone) {
+    const hasFix = droneTelemetry?.latitude && droneTelemetry?.longitude;
+    const droneLat = hasFix ? droneTelemetry!.latitude! : 12.9716;
+    const droneLng = hasFix ? droneTelemetry!.longitude! : 77.5946;
+    const isSim = droneTelemetry?.isSimulated ?? true;
+    const statusTag = hasFix
+      ? `${isSim ? 'SIMULATED FIX' : 'LIVE FIX'} • Alt ${droneTelemetry?.relativeAltitude?.toFixed(1) || 0}m`
+      : 'STANDBY / BENCH REFERENCE';
+
     mapMarkers.push({
-      lat: 48.1312,
-      lng: 11.579,
-      title: `${assignedDrone.droneId} (${assignedDrone.operationalStatus})`,
-      type: 'DRONE' as const
+      lat: droneLat,
+      lng: droneLng,
+      title: `${assignedDrone.droneId} (${statusTag})`,
+      type: 'DRONE' as const,
+      heading: droneTelemetry?.heading,
+      isSimulated: isSim
     });
   }
 
@@ -60,38 +106,38 @@ export const LiveMissionControlPage: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col w-full gap-space-lg">
+    <div className="flex flex-col w-full px-6 py-6 space-y-6 max-w-[1680px] mx-auto text-text-primary">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-md">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-surface rounded-xl border border-border shadow-sm">
         <div>
-          <div className="flex items-center gap-space-sm">
+          <div className="flex items-center gap-2.5">
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-fixed opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary-fixed"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-primary opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-primary" />
             </span>
-            <span className="font-label-telemetry text-label-telemetry text-primary-fixed uppercase tracking-wider">
-              TACTICAL GCS // LIVE MISSION CONTROL
+            <span className="font-sans text-xs text-accent-primary uppercase tracking-wider font-semibold">
+              Tactical GCS • Live Mission Control
             </span>
           </div>
-          <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight mt-0.5">
-            {selectedMission ? selectedMission.title : 'MISSION FLIGHT MONITOR'}
+          <h1 className="font-sans font-bold text-lg text-text-primary tracking-normal mt-1">
+            {selectedMission ? selectedMission.title : 'Mission Flight Monitor'}
           </h1>
         </div>
 
         {/* Mission Switcher */}
-        <div className="flex items-center gap-2 font-label-telemetry text-xs">
-          <span className="text-outline uppercase">SELECT ACTIVE SORTIE:</span>
+        <div className="flex items-center gap-2.5 font-sans text-xs">
+          <span className="text-text-muted">Active sortie:</span>
           {isLoading ? (
-            <span className="text-outline animate-pulse">LOADING SORTIES...</span>
+            <span className="text-text-muted animate-pulse">Loading sorties...</span>
           ) : (
             <select
               value={selectedMissionId}
               onChange={(e) => setSelectedMissionId(e.target.value)}
-              className="px-3 py-2 rounded bg-surface-container-low border border-surface-variant text-primary-fixed font-bold focus:outline-none"
+              className="px-3.5 py-1.5 rounded-lg bg-surface-elevated border border-border text-accent-primary font-semibold focus:border-accent-primary outline-none"
             >
               {missions.map((m) => (
                 <option key={m.missionId} value={m.missionId}>
-                  {m.missionId} // {m.title} [{m.status}]
+                  {m.missionId} • {m.title} ({m.status.toLowerCase()})
                 </option>
               ))}
             </select>
@@ -100,118 +146,117 @@ export const LiveMissionControlPage: React.FC = () => {
       </div>
 
       {evidenceNote && (
-        <div className="p-space-sm bg-primary-container/20 border border-primary-fixed text-primary-fixed rounded font-label-telemetry text-xs flex items-center justify-between">
-          <span>{evidenceNote}</span>
-          <button onClick={() => setEvidenceNote(null)}>✕</button>
+        <div className="p-3.5 bg-accent-primary/15 border border-accent-primary/40 text-accent-primary rounded-xl font-mono text-xs flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">verified</span>
+            <span>{evidenceNote}</span>
+          </div>
+          <button onClick={() => setEvidenceNote(null)} className="text-text-primary hover:text-accent-primary">✕</button>
         </div>
       )}
 
+      {/* Simulator Bench Control Panel */}
+      <SimulatorControlWidget />
+
       {/* Tactical Split View */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-md">
-        {/* Left Panel: Authorized Stored Evidence / Optical Preview */}
-        <div className="lg:col-span-7 bg-surface-container-lowest rounded-lg overflow-hidden shadow-2xl relative flex flex-col justify-between min-h-[460px] border border-surface-variant/50">
-          {/* Backdrop simulation pattern */}
-          <div className="absolute inset-0 bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:16px_16px] opacity-60 pointer-events-none" />
-
-          {/* Top Info Bar */}
-          <div className="relative z-10 p-space-md flex items-center justify-between bg-surface-container-lowest/80 backdrop-blur-md border-b border-surface-variant/40 font-label-telemetry text-xs">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-surface-container text-primary-fixed font-bold text-[10px]">
-                {selectedMission?.status || 'STANDBY'}
-              </span>
-              <span className="text-primary font-bold">{selectedMission?.missionId || 'MSN-UNKNOWN'}</span>
-              <span className="text-outline">|</span>
-              <span className="text-secondary">{selectedMission?.missionType}</span>
-            </div>
-
-            <div className="text-primary-fixed font-bold flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px]">flight</span>
-              <span>ASSET: {assignedDrone?.droneId || 'STANDBY'}</span>
-            </div>
-          </div>
-
-          {/* Center Tactical Viewport */}
-          <div className="relative z-10 my-auto text-center p-space-lg space-y-3 pointer-events-none">
-            <div className="w-24 h-24 mx-auto border border-primary-fixed/30 rounded-full flex items-center justify-center relative">
-              <span className="material-symbols-outlined text-[36px] text-primary-fixed/60">camera_alt</span>
-              <div className="absolute w-32 h-[1px] bg-primary-fixed/30" />
-              <div className="absolute h-32 w-[1px] bg-primary-fixed/30" />
-            </div>
-
-            <h3 className="font-headline-md text-sm text-primary tracking-wide">
-              {assignedDrone ? `STAGE ${selectedMission?.stage || 1}/8: ${selectedMission?.stageLabel || 'DATA COLLECTION'}` : 'AWAITING MISSION ASSET LAUNCH'}
-            </h3>
-
-            <p className="font-label-telemetry text-xs text-outline max-w-md mx-auto">
-              Per AERON Security Boundary, raw optical FPV streams are guarded in Admin GCS. Staged mission evidence and verified detections are relayed below.
-            </p>
-
-            {/* Simulated YOLO Detection Box Annotation */}
-            <div className="inline-block border border-primary-fixed/60 bg-primary-fixed/10 px-3 py-1.5 rounded font-label-telemetry text-[11px] text-primary-fixed shadow-[0_0_12px_rgba(191,244,46,0.2)]">
-              #BENCH-SAMPLE-042 // {selectedMission?.missionType || 'DEFECT'} [88.0% CONFIDENCE]
-            </div>
-          </div>
-
-          {/* Bottom HUD Bar */}
-          <div className="relative z-10 p-space-md bg-surface-container-lowest/80 backdrop-blur-md flex flex-wrap items-center justify-between gap-space-sm border-t border-surface-variant/40 font-label-telemetry text-xs">
-            <div className="flex items-center gap-3 text-secondary text-[11px]">
-              <span>AIRFRAME: <strong className="text-primary">{assignedDrone?.droneId || 'AERON-PX4-BENCH01'}</strong></span>
-              <span>STATUS: <strong className="text-primary-fixed">{assignedDrone?.operationalStatus || 'READY'}</strong></span>
-              <span>STAGE: <strong className="text-primary">{selectedMission?.stage || 1}/8</strong></span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleLogAnnotation}
-                className="px-3 py-1.5 rounded-full bg-primary-fixed hover:bg-surface-tint text-on-primary-fixed font-label-pill text-xs font-bold transition-all shadow-[0_0_12px_rgba(191,244,46,0.3)] flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                LOG VERIFIED ANNOTATION
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Panel: Leaflet Tactical Map */}
-        <div className="lg:col-span-5 bg-surface-container-low rounded-lg p-space-md flex flex-col justify-between shadow-xl min-h-[460px] border border-surface-variant/50">
-          <div className="flex items-center justify-between pb-2 border-b border-surface-variant/40 font-label-telemetry text-xs">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left: Leaflet Tactical Map (7 Cols) */}
+        <div className="lg:col-span-7 bg-surface rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[500px] border border-border">
+          <div className="flex items-center justify-between pb-3 border-b border-border/60 font-mono text-xs">
             <div className="flex flex-col">
-              <span className="text-primary-fixed font-bold uppercase">TACTICAL AIRSPACE CORRIDOR</span>
-              <span className="text-outline text-[10px]">COORDINATES & GEOFENCE GRID</span>
+              <span className="text-accent-primary font-bold uppercase tracking-wider">TACTICAL AIRSPACE CORRIDOR</span>
+              <span className="text-text-muted text-[10px]">COORDINATES & WAYPOINT GEOFENCE</span>
             </div>
-            <span className="px-2 py-0.5 rounded bg-surface-container text-primary-fixed text-[10px] font-bold">
-              {incidents.length} INCIDENTS
+            <span className="px-2.5 py-0.5 rounded bg-surface-elevated text-text-primary text-[10px] font-bold border border-border">
+              {incidents.length} FLAGGED INCIDENTS
             </span>
           </div>
 
-          <div className="flex-1 my-3 relative min-h-[320px]">
+          <div className="flex-1 my-3 relative min-h-[360px] rounded-xl overflow-hidden border border-border">
             <TacticalMap
-              center={[48.1371, 11.5761]}
-              zoom={13}
+              center={[12.9716, 77.5946]}
+              zoom={14}
               markers={mapMarkers}
               polygonCoords={[
-                [48.145, 11.565],
-                [48.145, 11.59],
-                [48.125, 11.59],
-                [48.125, 11.565]
+                [12.980, 77.585],
+                [12.980, 77.605],
+                [12.960, 77.605],
+                [12.960, 77.585]
               ]}
               routeCoords={[
-                [48.14, 11.57],
-                [48.138, 11.575],
-                [48.135, 11.58],
-                [48.1312, 11.579]
+                [12.975, 77.590],
+                [12.973, 77.593],
+                [12.9716, 77.5946],
+                [12.9725, 77.5960]
               ]}
               emptyNotice="NO ACTIVE GPS TRACK REPORTED"
             />
           </div>
 
-          <div className="pt-2 border-t border-surface-variant/40 flex items-center justify-between font-label-telemetry text-[11px] text-outline">
-            <span>SECTOR: ZONE 01</span>
-            <span className="text-primary-fixed font-bold">BENCH CORRIDOR: ARMED</span>
+          <div className="pt-2 border-t border-border/60 flex items-center justify-between font-mono text-xs text-text-muted">
+            <span>CORRIDOR: SECTOR 01 (URBAN CORE)</span>
+            <span className="text-success font-bold">AIRSPACE CLEARED</span>
+          </div>
+        </div>
+
+        {/* Right: Optical Telemetry & Detection Box HUD (5 Cols) */}
+        <div className="lg:col-span-5 bg-surface rounded-xl overflow-hidden shadow-sm relative flex flex-col justify-between min-h-[500px] border border-border">
+          {/* Top Info Bar */}
+          <div className="p-4 flex items-center justify-between bg-surface-elevated border-b border-border font-mono text-xs">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-surface text-accent-primary font-bold text-[10px] border border-border">
+                {selectedMission?.status || 'STANDBY'}
+              </span>
+              <span className="text-text-primary font-bold">{selectedMission?.missionId || 'MSN-UNKNOWN'}</span>
+            </div>
+
+            <div className="text-accent-primary font-bold flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px]">flight</span>
+              <span>ASSET: {assignedDrone?.droneId || 'HEX-01'}</span>
+            </div>
+          </div>
+
+          {/* Center Tactical Viewport */}
+          <div className="my-auto text-center p-6 space-y-4">
+            <div className="w-20 h-20 mx-auto border border-accent-primary/40 rounded-full flex items-center justify-center relative">
+              <span className="material-symbols-outlined text-[32px] text-accent-primary/80">camera_alt</span>
+              <div className="absolute w-28 h-[1px] bg-accent-primary/30" />
+              <div className="absolute h-28 w-[1px] bg-accent-primary/30" />
+            </div>
+
+            <h3 className="font-sans font-bold text-sm text-text-primary tracking-normal">
+              {assignedDrone
+                ? `Stage ${selectedMission?.stage || 1} of 8 • ${(selectedMission?.stageLabel || 'Data Collection').replace(/_/g, ' ')}`
+                : 'Awaiting mission asset dispatch'}
+            </h3>
+
+            <p className="font-sans text-xs text-text-muted max-w-sm mx-auto leading-relaxed">
+              Optical payload telemetry synced over authenticated WebSocket room. Target detections and inferences verified below.
+            </p>
+
+            {/* Neural Net Detection Box */}
+            <div className="inline-block border border-accent-primary/50 bg-accent-primary/10 px-3.5 py-1.5 rounded-lg font-sans text-xs text-accent-primary shadow-sm">
+              <span className="font-mono text-xs">#BENCH-SAMPLE-042</span> • {selectedMission?.missionType || 'Defect'} <span className="font-mono text-xs font-semibold">(88.0% confidence)</span>
+            </div>
+          </div>
+
+          {/* Bottom HUD Bar */}
+          <div className="p-4 bg-surface-elevated flex flex-wrap items-center justify-between gap-3 border-t border-border font-sans text-xs">
+            <div className="flex items-center gap-3 text-text-secondary text-[11px]">
+              <span>Status: <strong className="text-success font-semibold">{assignedDrone?.operationalStatus || 'Ready'}</strong></span>
+              <span>Stage: <strong className="text-accent-primary font-mono">{selectedMission?.stage || 1}/8</strong></span>
+            </div>
+
+            <button
+              onClick={handleLogAnnotation}
+              className="px-3.5 py-1.5 rounded-lg bg-accent-primary text-background font-sans font-semibold text-xs hover:opacity-90 transition-opacity flex items-center gap-1.5 shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[16px]">check_circle</span>
+              <span>Log verified annotation</span>
+            </button>
           </div>
         </div>
       </div>
     </div>
   );
 };
-

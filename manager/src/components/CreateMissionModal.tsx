@@ -66,107 +66,112 @@ export const CreateMissionModal: React.FC<CreateMissionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="w-full max-w-lg bg-surface-container-low border border-surface-variant rounded-lg p-space-lg shadow-2xl relative">
-        <div className="flex items-center justify-between pb-3 border-b border-surface-variant mb-4">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary-fixed">add_circle</span>
-            <h3 className="font-headline-md text-headline-md text-primary">INITIALIZE NEW MISSION SORTIE</h3>
+      <div className="w-full max-w-lg bg-surface border border-border rounded-2xl p-6 shadow-2xl relative text-text-primary">
+        <div className="flex items-center justify-between pb-3 border-b border-border mb-4">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-accent-primary text-[22px]">add_circle</span>
+            <h3 className="font-sans font-bold text-base text-text-primary">INITIALIZE NEW MISSION SORTIE</h3>
           </div>
-          <button onClick={onClose} className="text-outline hover:text-primary transition-colors">
-            <span className="material-symbols-outlined">close</span>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-surface-elevated text-text-secondary hover:text-text-primary flex items-center justify-center border border-border transition-colors">
+            <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded bg-error-container/30 border border-error/50 text-error font-label-telemetry text-xs flex items-center gap-2">
+          <div className="mb-4 p-3 rounded-xl bg-danger/15 border border-danger/40 text-danger font-mono text-xs flex items-center gap-2">
             <span className="material-symbols-outlined text-[16px]">error</span>
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 font-label-telemetry text-xs">
+        <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs">
           <div>
-            <label className="block text-outline uppercase tracking-wider mb-1">MISSION VERTICAL</label>
+            <label className="block text-text-muted uppercase tracking-wider mb-1.5 font-medium">MISSION VERTICAL</label>
             <select
               value={missionType}
               onChange={(e) => setMissionType(e.target.value as MissionType)}
-              className="w-full px-3 py-2 rounded bg-surface-container-lowest border border-surface-variant text-on-surface focus:border-primary-fixed focus:outline-none"
+              className="w-full px-3.5 py-2.5 rounded-lg bg-surface-elevated border border-border text-text-primary focus:border-accent-primary focus:outline-none font-sans text-xs"
             >
-              <option value="CIVIC_ISSUE_VERIFICATION">M01 // CIVIC ISSUE VERIFICATION</option>
-              <option value="CROWD_SAFETY">M02 // CROWD SAFETY & AERIAL MESH</option>
-              <option value="MICRO_CLIMATE">M03 // MICRO-CLIMATE & HEAT ISLAND</option>
-              <option value="SUBTERRANEAN_SEARCH_RESCUE">M04 // SUBTERRANEAN SEARCH & RESCUE</option>
+              <option value="CIVIC_ISSUE_VERIFICATION">M01 — Civic Issue Verification</option>
+              <option value="CROWD_SAFETY">M02 — Crowd Safety & Aerial Mesh</option>
+              <option value="MICRO_CLIMATE">M03 — Micro-Climate & Heat Island</option>
+              <option value="SUBTERRANEAN_SEARCH_RESCUE">M04 — Subterranean Search & Rescue</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-outline uppercase tracking-wider mb-1">MISSION TITLE</label>
+            <label className="block text-text-muted text-xs mb-1.5 font-medium font-sans">Mission Title</label>
             <input
               type="text"
+              required
+              placeholder="e.g. Sector 7 Urban Infrastructure Survey"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              required
-              minLength={3}
-              maxLength={200}
-              placeholder="e.g. Sector 04 Road Pavement Quality Survey"
-              className="w-full px-3 py-2 rounded bg-surface-container-lowest border border-surface-variant text-on-surface focus:border-primary-fixed focus:outline-none"
+              className="w-full px-3.5 py-2.5 rounded-lg bg-surface-elevated border border-border text-text-primary focus:border-accent-primary focus:outline-none font-sans text-xs"
             />
           </div>
 
           <div>
-            <label className="block text-outline uppercase tracking-wider mb-1">OPERATIONAL DESCRIPTION</label>
+            <label className="block text-text-muted uppercase tracking-wider mb-1.5 font-medium">OPERATIONAL DESCRIPTION</label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
               required
               rows={3}
-              placeholder="Describe mission flight goals, target zones, and evidence verification parameters..."
-              className="w-full px-3 py-2 rounded bg-surface-container-lowest border border-surface-variant text-on-surface focus:border-primary-fixed focus:outline-none resize-none"
+              placeholder="Operational objectives, flight corridors, safety constraints..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-lg bg-surface-elevated border border-border text-text-primary focus:border-accent-primary focus:outline-none resize-none"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-outline uppercase tracking-wider mb-1">ASSIGNED AIRFRAME</label>
+              <label className="block text-text-muted uppercase tracking-wider mb-1.5 font-medium">ASSIGN AIRFRAME</label>
               <select
                 value={selectedDroneId}
                 onChange={(e) => setSelectedDroneId(e.target.value)}
-                className="w-full px-3 py-2 rounded bg-surface-container-lowest border border-surface-variant text-on-surface focus:border-primary-fixed focus:outline-none"
+                className="w-full px-3.5 py-2.5 rounded-lg bg-surface-elevated border border-border text-text-primary focus:border-accent-primary focus:outline-none"
               >
-                <option value="">-- NO DRONE ASSIGNED --</option>
+                <option value="">AUTO-SELECT DISPATCH</option>
                 {availableDrones.map((d) => (
                   <option key={d.droneId} value={d.droneId}>
-                    {d.droneId} ({d.displayName}) [{d.operationalStatus}]
+                    {d.droneId} ({d.displayName}) — {d.operationalStatus}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-outline uppercase tracking-wider mb-1">PLANNED START TIME</label>
+              <label className="block text-text-muted uppercase tracking-wider mb-1.5 font-medium">PLANNED DEPLOYMENT</label>
               <input
                 type="datetime-local"
                 value={plannedStart}
                 onChange={(e) => setPlannedStart(e.target.value)}
-                className="w-full px-3 py-2 rounded bg-surface-container-lowest border border-surface-variant text-on-surface focus:border-primary-fixed focus:outline-none"
+                className="w-full px-3.5 py-2.5 rounded-lg bg-surface-elevated border border-border text-text-primary focus:border-accent-primary focus:outline-none"
               />
             </div>
           </div>
 
-          <div className="pt-2 flex justify-end gap-3">
+          <div className="pt-3 border-t border-border flex justify-end gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded bg-surface-container hover:bg-surface-variant text-secondary text-xs font-label-pill"
+              className="px-4 py-2 bg-surface-elevated hover:bg-surface-muted text-text-secondary rounded-lg border border-border font-sans font-semibold text-xs transition-colors"
             >
               CANCEL
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2 rounded-full bg-primary-fixed hover:bg-surface-tint text-on-primary-fixed font-bold text-xs font-label-pill flex items-center gap-1.5 shadow-[0_0_12px_rgba(191,244,46,0.3)] disabled:opacity-50"
+              className="px-5 py-2 bg-accent-primary text-background font-sans font-bold text-xs rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2 disabled:opacity-50"
             >
-              {isSubmitting ? 'CREATING...' : 'AUTHORIZE MISSION +'}
+              {isSubmitting ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-background border-t-transparent rounded-full animate-spin" />
+                  <span>INITIALIZING SORTIE...</span>
+                </>
+              ) : (
+                <span>DISPATCH MISSION</span>
+              )}
             </button>
           </div>
         </form>
@@ -174,4 +179,3 @@ export const CreateMissionModal: React.FC<CreateMissionModalProps> = ({
     </div>
   );
 };
-

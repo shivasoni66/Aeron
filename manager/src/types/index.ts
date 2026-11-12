@@ -207,3 +207,37 @@ export interface AnalyticsOverviewData {
   };
   dataFreshnessTimestamp: string;
 }
+
+export interface CitizenReportData {
+  _id: string;
+  reportId: string;
+  citizenId?: {
+    _id: string;
+    name: string;
+    email: string;
+    reputationScore?: number;
+  };
+  category: string;
+  description: string;
+  location: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
+  mediaAssets?: Array<{
+    _id: string;
+    url?: string;
+    filename?: string;
+  }>;
+  status:
+    | 'SUBMITTED'
+    | 'MUNICIPAL_REVIEW'
+    | 'INSPECTION_SCHEDULED'
+    | 'AERIAL_VERIFIED'
+    | 'PUBLIC_WORKS_ASSIGNED'
+    | 'RESOLVED'
+    | 'REJECTED';
+  currentStage: number;
+  earnedPoints: number;
+  submittedAt: string;
+  reviewedAt?: string;
+}

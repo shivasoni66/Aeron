@@ -8,44 +8,78 @@ export default {
   theme: {
     extend: {
       colors: {
-        "background": "#131313",
-        "surface": "#131313",
-        "surface-dim": "#131313",
-        "surface-bright": "#393939",
-        "surface-container-lowest": "#0e0e0e",
-        "surface-container-low": "#1b1c1c",
-        "surface-container": "#202020",
-        "surface-container-high": "#2a2a2a",
-        "surface-container-highest": "#353535",
-        "surface-variant": "#353535",
-        "on-surface": "#e5e2e1",
-        "on-surface-variant": "#c4c9ae",
-        "primary": "#ffffff",
-        "on-primary": "#273500",
-        "primary-container": "#bff42e",
-        "primary-fixed": "#bff42e",
-        "primary-fixed-dim": "#a5d700",
-        "on-primary-container": "#526d00",
-        "on-primary-fixed": "#151f00",
-        "secondary": "#c6c6c7",
-        "secondary-container": "#454747",
-        "on-secondary": "#2f3131",
-        "on-secondary-container": "#b4b5b5",
-        "tertiary": "#ffffff",
-        "tertiary-container": "#e3e2e2",
-        "outline": "#8d937a",
-        "outline-variant": "#434934",
-        "error": "#ffb4ab",
-        "error-container": "#93000a",
-        "on-error": "#690005"
+        // Official AERON Aerospace Ground Control Palette
+        background: "#0D141B",
+        surface: "#151E27",
+        "surface-elevated": "#192631",
+        "surface-secondary": "#202F39",
+        "surface-muted": "#121A22",
+        border: "#334451",
+        "border-subtle": "#2A3944",
+
+        // Text Hierarchy
+        "text-primary": "#F0F4F6",
+        "text-secondary": "#B4C0C8",
+        "text-muted": "#84939E",
+
+        // AERON Signature Accents & Semantic Channels
+        "aeron-lime": "#BFF42E",
+        "accent-primary": "#BFF42E",
+        "accent-soft": "#829E43",
+        "telemetry-cyan": "#35C6D8",
+        "navigation-blue": "#789BFF",
+        "caution-amber": "#F2B95F",
+        "critical-coral": "#F07878",
+        "sar-violet": "#A78BFA",
+
+        // Semantic status mappings
+        success: "#79BD91",
+        warning: "#F2B95F",
+        danger: "#F07878",
+        info: "#35C6D8",
+        "status-danger": "#F07878",
+        "status-warning": "#F2B95F",
+        "status-info": "#35C6D8",
+        "status-success": "#79BD91",
+
+        // Backwards compatibility mappings for existing component classes
+        "surface-dim": "#0D141B",
+        "surface-bright": "#202F39",
+        "surface-container-lowest": "#0A0F14",
+        "surface-container-low": "#151E27",
+        "surface-container": "#151E27",
+        "surface-container-high": "#192631",
+        "surface-container-highest": "#202F39",
+        "surface-variant": "#1C2833",
+        "on-surface": "#F0F4F6",
+        "on-surface-variant": "#B4C0C8",
+        "primary": "#F0F4F6",
+        "on-primary": "#0D141B",
+        "primary-container": "#BFF42E",
+        "primary-fixed": "#BFF42E",
+        "primary-fixed-dim": "#829E43",
+        "on-primary-container": "#0D141B",
+        "on-primary-fixed": "#0D141B",
+        "secondary": "#B4C0C8",
+        "secondary-container": "#202F39",
+        "on-secondary": "#0D141B",
+        "on-secondary-container": "#B4C0C8",
+        "tertiary": "#35C6D8",
+        "tertiary-container": "#172E38",
+        outline: "#334451",
+        "outline-variant": "#2A3944",
+        error: "#F07878",
+        "error-container": "#3A1B1F",
+        "on-error": "#FFFFFF"
       },
       borderRadius: {
-        "sm": "0.5rem",
-        "DEFAULT": "1rem",
-        "md": "1.5rem",
-        "lg": "2rem",
-        "xl": "3rem",
-        "full": "9999px"
+        sm: "0.375rem",
+        DEFAULT: "0.5rem",
+        md: "0.75rem",
+        lg: "1rem",
+        xl: "1.25rem",
+        "2xl": "1.5rem",
+        full: "9999px"
       },
       spacing: {
         "space-xs": "0.25rem",
@@ -53,9 +87,12 @@ export default {
         "space-md": "1rem",
         "space-lg": "1.5rem",
         "space-xl": "2.5rem",
-        "gutter": "1.5rem"
+        gutter: "1.5rem"
       },
       fontFamily: {
+        sans: ["Manrope", "sans-serif"],
+        mono: ["Space Mono", "monospace"],
+        display: ["Anton", "sans-serif"],
         "display-hero": ["Anton", "sans-serif"],
         "headline-xl": ["Anton", "sans-serif"],
         "headline-lg": ["Anton", "sans-serif"],
@@ -70,4 +107,3 @@ export default {
   },
   plugins: []
 };
-

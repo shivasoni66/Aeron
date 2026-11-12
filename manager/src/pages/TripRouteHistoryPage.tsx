@@ -82,87 +82,99 @@ export const TripRouteHistoryPage: React.FC = () => {
     });
   }
 
+  // Derived telemetry metrics
+  const maxAlt = telemetrySamples.reduce((max, s) => Math.max(max, s.altitude || 0), 0);
+  const avgSpeed = telemetrySamples.length > 0
+    ? (telemetrySamples.reduce((sum, s) => sum + (s.groundSpeed || 0), 0) / telemetrySamples.length).toFixed(1)
+    : '0.0';
+
   return (
-    <div className="flex flex-col w-full gap-space-lg">
+    <div className="flex flex-col w-full gap-6">
       {/* Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-md">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-space-sm">
-            <span className="font-label-telemetry text-label-telemetry text-primary-fixed">[FLIGHT LEDGER]</span>
-            <span className="px-2 py-0.5 rounded bg-surface-container text-primary-fixed font-label-telemetry text-[10px] font-bold">
-              AUDITABLE FLIGHT RECORDS
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded bg-surface-container text-primary-fixed font-sans text-xs font-semibold border border-primary-fixed/20">
+              Auditable Sortie Archive
             </span>
           </div>
-          <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight mt-0.5">
-            TRIP & ROUTE HISTORY
+          <h1 className="font-sans text-2xl font-bold text-on-surface tracking-tight mt-1">
+            Trip & Route History
           </h1>
-          <p className="font-body-sm text-secondary text-xs">
-            Historical flight telemetry archives, recorded routes, and waypoint milestone verification.
+          <p className="font-sans text-secondary text-xs">
+            Historical flight trajectories, waypoint milestones, and immutable telemetry session records.
           </p>
         </div>
       </div>
 
       {/* Filter toolbar */}
-      <div className="p-space-md rounded bg-surface-container-low border border-surface-variant/40 flex flex-wrap items-center justify-between gap-3 font-label-telemetry text-xs">
-        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-1 min-w-[240px]">
-          <div className="bg-surface-container-lowest px-3 py-2 rounded flex items-center gap-2 border border-surface-variant flex-1">
+      <div className="p-4 rounded-xl bg-surface-container-low border border-surface-variant/40 flex flex-wrap items-center justify-between gap-3 font-sans text-xs">
+        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-1 min-w-[260px]">
+          <div className="bg-surface-container-lowest px-3 py-2 rounded-lg flex items-center gap-2 border border-surface-variant/60 flex-1">
             <span className="material-symbols-outlined text-[16px] text-outline">search</span>
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="SEARCH FLIGHT ID OR SUMMARY..."
-              className="bg-transparent text-on-surface focus:outline-none w-full text-xs placeholder:text-outline"
+              placeholder="Search by flight ID or airframe..."
+              className="bg-transparent text-on-surface focus:outline-none w-full text-xs placeholder:text-outline/70"
             />
           </div>
-          <button type="submit" className="px-3 py-2 bg-surface-container-high hover:bg-surface-variant rounded text-on-surface">
-            SEARCH
+          <button
+            type="submit"
+            className="px-4 py-2 bg-surface-container-high hover:bg-surface-variant rounded-lg text-on-surface font-semibold text-xs transition-colors"
+          >
+            Search
           </button>
         </form>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap font-sans text-xs">
           <select
             value={sourceFilter}
             onChange={(e) => setSourceFilter(e.target.value)}
-            className="px-3 py-2 rounded bg-surface-container-lowest border border-surface-variant text-on-surface focus:outline-none text-xs"
+            className="px-3 py-2 rounded-lg bg-surface-container-lowest border border-surface-variant/60 text-on-surface focus:outline-none text-xs"
           >
-            <option value="">ALL SOURCES</option>
-            <option value="REAL">REAL HARDWARE</option>
-            <option value="SIMULATION">SIMULATION BENCH</option>
+            <option value="">All Sources</option>
+            <option value="REAL">Real Hardware</option>
+            <option value="SIMULATION">Simulation Bench</option>
           </select>
 
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded bg-surface-container-lowest border border-surface-variant text-on-surface focus:outline-none text-xs"
+            className="px-3 py-2 rounded-lg bg-surface-container-lowest border border-surface-variant/60 text-on-surface focus:outline-none text-xs"
           >
-            <option value="">ALL STATUSES</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="COMPLETED">COMPLETED</option>
-            <option value="ABORTED">ABORTED</option>
+            <option value="">All Statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="ABORTED">Aborted</option>
           </select>
         </div>
       </div>
 
       {/* Route Visualizer & Selected Flight Telemetry */}
       {selectedFlight && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-md">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           {/* Tactical Map Route Reconstruction (7 cols) */}
-          <div className="lg:col-span-7 bg-surface-container-low p-space-md rounded-lg border border-surface-variant/40 shadow-xl flex flex-col justify-between min-h-[400px]">
-            <div className="flex justify-between items-center pb-2 border-b border-surface-variant/40 font-label-telemetry text-xs">
+          <div className="lg:col-span-7 bg-surface-container-low p-4 rounded-xl border border-surface-variant/40 shadow-xl flex flex-col justify-between min-h-[420px]">
+            <div className="flex justify-between items-center pb-3 border-b border-surface-variant/40 font-mono text-xs">
               <div className="flex items-center gap-2">
                 <span className="text-primary-fixed font-bold">{selectedFlight.flightSessionId}</span>
-                <span className="text-outline">|</span>
-                <span className="text-primary">{selectedFlight.droneId?.droneId || 'AERON-PX4-BENCH01'}</span>
+                <span className="text-outline">/</span>
+                <span className="text-on-surface font-semibold">{selectedFlight.droneId?.droneId || 'AERON-PX4-BENCH01'}</span>
               </div>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${selectedFlight.source === 'REAL' ? 'bg-primary-fixed/20 text-primary-fixed border border-primary-fixed/30' : 'bg-surface-container text-secondary'}`}>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                selectedFlight.source === 'REAL'
+                  ? 'bg-primary-fixed/20 text-primary-fixed border border-primary-fixed/30'
+                  : 'bg-surface-container text-secondary border border-surface-variant'
+              }`}>
                 {selectedFlight.source}
               </span>
             </div>
 
-            <div className="flex-1 my-3 relative min-h-[300px]">
+            <div className="flex-1 my-3 relative min-h-[320px] rounded-lg overflow-hidden border border-surface-variant/30">
               {isLoadingDetails ? (
-                <div className="h-full min-h-[300px] flex items-center justify-center text-outline font-label-telemetry text-xs animate-pulse">
+                <div className="h-full min-h-[320px] flex items-center justify-center text-outline font-mono text-xs animate-pulse">
                   RECONSTRUCTING FLIGHT ROUTE & TELEMETRY...
                 </div>
               ) : (
@@ -176,89 +188,103 @@ export const TripRouteHistoryPage: React.FC = () => {
               )}
             </div>
 
-            <div className="pt-2 border-t border-surface-variant/40 flex justify-between items-center font-label-telemetry text-[11px] text-outline">
-              <span>SAMPLES RENDERED: {telemetrySamples.length} PTS</span>
-              <span>DURATION: {Math.round(selectedFlight.durationSeconds / 60)} MIN</span>
+            <div className="pt-2 border-t border-surface-variant/40 flex justify-between items-center font-mono text-[11px] text-outline">
+              <span>SAMPLES RENDERED: <strong className="text-on-surface">{telemetrySamples.length}</strong> PTS</span>
+              <span>PEAK ALT: <strong className="text-primary-fixed">{maxAlt.toFixed(1)}m</strong></span>
+              <span>AVG SPEED: <strong className="text-on-surface">{avgSpeed} m/s</strong></span>
+              <span>DURATION: <strong className="text-on-surface">{Math.round(selectedFlight.durationSeconds / 60)} MIN</strong></span>
             </div>
           </div>
 
           {/* Flight Summary & Audit Metrics (5 cols) */}
-          <div className="lg:col-span-5 bg-surface-container-low p-space-md rounded-lg border border-surface-variant/40 shadow-xl flex flex-col justify-between font-label-telemetry text-xs">
+          <div className="lg:col-span-5 bg-surface-container-low p-5 rounded-xl border border-surface-variant/40 shadow-xl flex flex-col justify-between font-mono text-xs">
             <div>
-              <div className="flex justify-between items-center pb-2 border-b border-surface-variant/40 mb-3">
-                <span className="text-primary font-bold uppercase">SORTIE METADATA</span>
-                <span className="text-outline">{new Date(selectedFlight.startedAt).toLocaleDateString()}</span>
+              <div className="flex justify-between items-center pb-3 border-b border-surface-variant/40 mb-3">
+                <span className="text-on-surface font-bold tracking-wider uppercase font-sans text-sm">Sortie Intelligence</span>
+                <span className="text-outline text-[11px]">{new Date(selectedFlight.startedAt).toLocaleDateString()}</span>
               </div>
 
               <div className="space-y-2.5">
-                <div className="flex justify-between items-center py-1 border-b border-surface-variant/30">
-                  <span className="text-outline">AIRFRAME</span>
-                  <span className="text-primary font-bold">{selectedFlight.droneId?.droneId || 'AERON-PX4-BENCH01'}</span>
+                <div className="flex justify-between items-center py-1.5 border-b border-surface-variant/30">
+                  <span className="text-outline">AIRFRAME ID</span>
+                  <span className="text-primary-fixed font-bold">{selectedFlight.droneId?.droneId || 'AERON-PX4-BENCH01'}</span>
                 </div>
-                <div className="flex justify-between items-center py-1 border-b border-surface-variant/30">
-                  <span className="text-outline">MISSION SORTIE</span>
-                  <span className="text-primary-fixed">{selectedFlight.missionId?.title || 'GENERAL TELEMETRY LOG'}</span>
+                <div className="flex justify-between items-center py-1.5 border-b border-surface-variant/30">
+                  <span className="text-outline">ASSIGNED MISSION</span>
+                  <span className="text-on-surface max-w-[200px] truncate text-right font-medium">{selectedFlight.missionId?.title || 'GENERAL TELEMETRY LOG'}</span>
                 </div>
-                <div className="flex justify-between items-center py-1 border-b border-surface-variant/30">
-                  <span className="text-outline">STATUS</span>
-                  <span className="px-2 py-0.5 rounded bg-surface-container text-on-surface font-bold text-[10px]">
+                <div className="flex justify-between items-center py-1.5 border-b border-surface-variant/30">
+                  <span className="text-outline">FLIGHT STATUS</span>
+                  <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                    selectedFlight.status === 'COMPLETED'
+                      ? 'bg-status-success/20 text-status-success border border-status-success/30'
+                      : selectedFlight.status === 'ABORTED'
+                      ? 'bg-status-danger/20 text-status-danger border border-status-danger/30'
+                      : 'bg-primary-fixed/20 text-primary-fixed border border-primary-fixed/30'
+                  }`}>
                     {selectedFlight.status}
                   </span>
                 </div>
-                <div className="flex justify-between items-center py-1 border-b border-surface-variant/30">
-                  <span className="text-outline">STARTED AT</span>
+                <div className="flex justify-between items-center py-1.5 border-b border-surface-variant/30">
+                  <span className="text-outline">DEPARTURE</span>
                   <span className="text-on-surface">{new Date(selectedFlight.startedAt).toLocaleTimeString()}</span>
                 </div>
-                <div className="flex justify-between items-center py-1 border-b border-surface-variant/30">
-                  <span className="text-outline">ENDED AT</span>
+                <div className="flex justify-between items-center py-1.5 border-b border-surface-variant/30">
+                  <span className="text-outline">RECOVERY</span>
                   <span className="text-on-surface">
-                    {selectedFlight.endedAt ? new Date(selectedFlight.endedAt).toLocaleTimeString() : 'ACTIVE'}
+                    {selectedFlight.endedAt ? new Date(selectedFlight.endedAt).toLocaleTimeString() : 'ACTIVE SORTIE'}
                   </span>
                 </div>
-                <div className="flex justify-between items-center py-1 border-b border-surface-variant/30">
+                <div className="flex justify-between items-center py-1.5 border-b border-surface-variant/30">
                   <span className="text-outline">RECORDED DURATION</span>
-                  <span className="text-primary font-bold">
+                  <span className="text-primary-fixed font-bold">
                     {Math.floor(selectedFlight.durationSeconds / 60)}m {selectedFlight.durationSeconds % 60}s
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 p-2.5 bg-surface-container-lowest rounded border border-surface-variant/30 text-[11px] text-outline">
-              <strong className="text-primary-fixed block mb-0.5">SOURCE ATTRIBUTION:</strong>
+            <div className="mt-4 p-3 bg-surface-container-lowest rounded-lg border border-surface-variant/40 text-[11px] text-secondary leading-relaxed">
+              <strong className="text-primary-fixed block font-mono text-[10px] uppercase mb-1">Source Telemetry Verification:</strong>
               {selectedFlight.source === 'REAL'
-                ? 'MAVLink telemetry streamed over physical Pixhawk serial port. Verified real-world flight data.'
-                : 'Synthetic simulation bench telemetry generated by local software bench emulator.'}
+                ? 'MAVLink telemetry streamed over physical Pixhawk serial port. Verified real-world flight data with cryptographic integrity hash.'
+                : 'Synthetic simulation bench telemetry generated by software bench emulator for operational mission rehearsal.'}
             </div>
           </div>
         </div>
       )}
 
       {/* Flight Sessions Table */}
-      <div className="w-full overflow-x-auto rounded-lg bg-surface-container-low shadow-xl border border-surface-variant/40">
+      <div className="w-full overflow-x-auto rounded-xl bg-surface-container-low shadow-xl border border-surface-variant/40">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="bg-surface-container-lowest text-outline font-label-telemetry text-[11px] uppercase tracking-wider border-b border-surface-variant/50">
-              <th className="p-space-md">TRIP / SESSION ID</th>
-              <th className="p-space-md">AIRFRAME</th>
-              <th className="p-space-md">SOURCE</th>
-              <th className="p-space-md">START TIME</th>
-              <th className="p-space-md">DURATION</th>
-              <th className="p-space-md">STATUS</th>
-              <th className="p-space-md text-right">ACTION</th>
+            <tr className="bg-surface-container-lowest text-outline font-sans text-[11px] font-semibold border-b border-surface-variant/50">
+              <th className="p-4">Sortie ID</th>
+              <th className="p-4">Airframe</th>
+              <th className="p-4">Telemetry Source</th>
+              <th className="p-4">Started</th>
+              <th className="p-4">Duration</th>
+              <th className="p-4">Status</th>
+              <th className="p-4 text-right">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-surface-variant/30 text-on-surface font-body-sm text-xs">
+          <tbody className="divide-y divide-surface-variant/30 text-on-surface font-sans text-xs">
             {isLoading ? (
               <tr>
-                <td colSpan={7} className="p-12 text-center text-outline font-label-telemetry">
-                  LOADING FLIGHT SESSIONS...
+                <td colSpan={7} className="p-12 text-center text-outline">
+                  Loading flight sessions...
                 </td>
               </tr>
             ) : flights.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-12 text-center text-outline font-label-telemetry">
-                  NO FLIGHT SESSIONS FOUND
+                <td colSpan={7} className="p-12 text-center text-outline">
+                  <div className="flex flex-col items-center justify-center space-y-2">
+                    <span className="material-symbols-outlined text-[36px] text-outline/50">history_toggle_off</span>
+                    <span className="font-semibold text-on-surface">No flight sessions found</span>
+                    <p className="text-[11px] text-secondary max-w-sm">
+                      Zero flight sortie records match the filter criteria.
+                    </p>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -266,39 +292,49 @@ export const TripRouteHistoryPage: React.FC = () => {
                 <tr
                   key={f._id}
                   onClick={() => inspectFlight(f.flightSessionId)}
-                  className={`hover:bg-surface-container transition-colors cursor-pointer ${selectedFlight?.flightSessionId === f.flightSessionId ? 'bg-surface-container' : ''}`}
+                  className={`hover:bg-surface-container transition-colors cursor-pointer ${selectedFlight?.flightSessionId === f.flightSessionId ? 'bg-surface-container/70' : ''}`}
                 >
-                  <td className="p-space-md font-label-telemetry text-primary-fixed font-bold">
+                  <td className="p-4 font-mono text-primary-fixed font-bold">
                     {f.flightSessionId}
                   </td>
-                  <td className="p-space-md font-label-telemetry">
+                  <td className="p-4 font-mono text-on-surface">
                     {f.droneId?.droneId || 'AERON-PX4-BENCH01'}
                   </td>
-                  <td className="p-space-md font-label-telemetry">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${f.source === 'REAL' ? 'bg-primary-fixed/20 text-primary-fixed' : 'bg-surface-container text-secondary'}`}>
+                  <td className="p-4 font-mono">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      f.source === 'REAL'
+                        ? 'bg-primary-fixed/20 text-primary-fixed border border-primary-fixed/30'
+                        : 'bg-surface-container text-secondary border border-surface-variant'
+                    }`}>
                       {f.source}
                     </span>
                   </td>
-                  <td className="p-space-md font-label-telemetry text-secondary text-[11px]">
+                  <td className="p-4 font-mono text-secondary text-[11px]">
                     {new Date(f.startedAt).toLocaleString()}
                   </td>
-                  <td className="p-space-md font-label-telemetry text-primary">
+                  <td className="p-4 font-mono text-on-surface font-medium">
                     {Math.floor(f.durationSeconds / 60)}m {f.durationSeconds % 60}s
                   </td>
-                  <td className="p-space-md">
-                    <span className="px-2 py-0.5 rounded bg-surface-container text-outline text-[10px] font-bold font-label-telemetry">
+                  <td className="p-4">
+                    <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                      f.status === 'COMPLETED'
+                        ? 'bg-status-success/20 text-status-success border border-status-success/30'
+                        : f.status === 'ABORTED'
+                        ? 'bg-status-danger/20 text-status-danger border border-status-danger/30'
+                        : 'bg-surface-container text-outline'
+                    }`}>
                       {f.status}
                     </span>
                   </td>
-                  <td className="p-space-md text-right">
+                  <td className="p-4 text-right">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         inspectFlight(f.flightSessionId);
                       }}
-                      className="px-2.5 py-1 rounded bg-surface-container-high hover:bg-surface-variant font-label-telemetry text-[11px] text-on-surface"
+                      className="px-3 py-1 rounded-lg bg-surface-container-high hover:bg-surface-variant font-sans text-xs font-semibold text-on-surface border border-surface-variant/40 transition-colors"
                     >
-                      VIEW ROUTE
+                      View Trajectory
                     </button>
                   </td>
                 </tr>
@@ -310,20 +346,20 @@ export const TripRouteHistoryPage: React.FC = () => {
 
       {/* Pagination */}
       {pagination.totalPages > 1 && (
-        <div className="flex justify-between items-center font-label-telemetry text-xs text-outline pt-2">
-          <span>PAGE {pagination.page} OF {pagination.totalPages} ({pagination.total} TOTAL SESSIONS)</span>
+        <div className="flex justify-between items-center font-mono text-xs text-outline pt-2">
+          <span>PAGE {pagination.page} OF {pagination.totalPages} ({pagination.total} TOTAL SORTIES)</span>
           <div className="flex gap-2">
             <button
               onClick={() => loadFlights(pagination.page - 1)}
               disabled={pagination.page <= 1}
-              className="px-3 py-1.5 rounded bg-surface-container hover:bg-surface-variant text-on-surface disabled:opacity-40"
+              className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-variant text-on-surface disabled:opacity-40 transition-colors"
             >
               PREVIOUS
             </button>
             <button
               onClick={() => loadFlights(pagination.page + 1)}
               disabled={pagination.page >= pagination.totalPages}
-              className="px-3 py-1.5 rounded bg-surface-container hover:bg-surface-variant text-on-surface disabled:opacity-40"
+              className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-variant text-on-surface disabled:opacity-40 transition-colors"
             >
               NEXT
             </button>

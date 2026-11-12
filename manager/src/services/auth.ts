@@ -34,6 +34,7 @@ export interface AuthResponse {
 
 let inMemoryAccessToken: string | null = null;
 let currentCsrfToken: string | null = null;
+let inFlightRefreshPromise: Promise<AuthResponse> | null = null;
 
 export const setAccessToken = (token: string | null) => {
   inMemoryAccessToken = token;
@@ -90,44 +91,54 @@ export const loginManager = async (email: string, password: string): Promise<Aut
 };
 
 export const refreshSession = async (): Promise<AuthResponse> => {
-  try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
-    if (currentCsrfToken) {
-      headers['X-CSRF-Token'] = currentCsrfToken;
-    }
-
-    const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers,
-      credentials: 'include'
-    });
-
-    const data: AuthResponse = await res.json().catch(() => ({
-      status: 'error',
-      message: 'Session refresh failed'
-    }));
-
-    data.statusCode = res.status;
-
-    if (res.status === 200 && data.status === 'success' && data.data?.accessToken) {
-      setAccessToken(data.data.accessToken);
-      if (data.data.csrfToken) {
-        setCsrfToken(data.data.csrfToken);
-      }
-    } else {
-      setAccessToken(null);
-    }
-    return data;
-  } catch {
-    setAccessToken(null);
-    return {
-      status: 'error',
-      statusCode: 0,
-      message: 'Session refresh network error'
-    };
+  if (inFlightRefreshPromise) {
+    return inFlightRefreshPromise;
   }
+
+  inFlightRefreshPromise = (async () => {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (currentCsrfToken) {
+        headers['X-CSRF-Token'] = currentCsrfToken;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers,
+        credentials: 'include'
+      });
+
+      const data: AuthResponse = await res.json().catch(() => ({
+        status: 'error',
+        message: 'Session refresh failed'
+      }));
+
+      data.statusCode = res.status;
+
+      if (res.status === 200 && data.status === 'success' && data.data?.accessToken) {
+        setAccessToken(data.data.accessToken);
+        if (data.data.csrfToken) {
+          setCsrfToken(data.data.csrfToken);
+        }
+      } else {
+        setAccessToken(null);
+      }
+      return data;
+    } catch {
+      setAccessToken(null);
+      return {
+        status: 'error',
+        statusCode: 0,
+        message: 'Session refresh network error'
+      };
+    } finally {
+      inFlightRefreshPromise = null;
+    }
+  })();
+
+  return inFlightRefreshPromise;
 };
 
 export const logoutManager = async (): Promise<void> => {

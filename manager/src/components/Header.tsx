@@ -1,71 +1,106 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useManagerOperations } from '../contexts/ManagerOperationsContext';
 
-interface HeaderProps {
-  activeMissionsCount?: number;
-  openIncidentsCount?: number;
-}
-
-export const Header: React.FC<HeaderProps> = ({
-  activeMissionsCount = 0,
-  openIncidentsCount = 0
-}) => {
+export const Header: React.FC = () => {
   const { user, logout } = useAuth();
+  const { activeMissionsCount, openIncidentsCount } = useManagerOperations();
+  const [profileOpen, setProfileOpen] = useState(false);
+
+  // Derive manager initials
+  const initials = user?.name
+    ? user.name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    : 'MO';
 
   return (
-    <header className="fixed top-0 left-72 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-surface-variant z-40 px-space-lg flex items-center justify-between">
-      <div className="flex items-center gap-space-lg">
-        <div className="flex items-baseline gap-space-xs">
-          <span className="font-headline-md text-headline-md tracking-wider text-primary">AERON</span>
-          <span className="text-outline text-body-sm font-label-telemetry">— MISSION INTELLIGENCE</span>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high border border-surface-variant">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-fixed opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-fixed"></span>
+    <header className="fixed top-0 left-72 right-0 h-16 bg-surface/95 backdrop-blur-xl border-b border-border z-40 px-6 flex items-center justify-between text-text-primary shadow-sm">
+      {/* Brand & Live Airspace Indicator */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-sans font-extrabold text-lg tracking-wider text-text-primary">
+              AERON
+            </span>
+            <span className="w-1.5 h-1.5 rounded-full bg-aeron-lime" />
+          </div>
+          <span className="text-border">•</span>
+          <span className="font-sans text-xs text-text-secondary tracking-wide font-medium">
+            Mission Intelligence
           </span>
-          <span className="font-label-telemetry text-label-telemetry text-primary-fixed tracking-wider uppercase">
-            {activeMissionsCount} {activeMissionsCount === 1 ? 'MISSION' : 'MISSIONS'} ACTIVE
+        </div>
+
+        {/* Authoritative Active Mission Badge */}
+        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-aeron-lime/10 border border-aeron-lime/30">
+          <span className="w-2 h-2 rounded-full bg-aeron-lime animate-pulse shadow-[0_0_8px_#BFF42E]" />
+          <span className="font-sans text-xs text-aeron-lime font-semibold">
+            {activeMissionsCount} {activeMissionsCount === 1 ? 'active sortie' : 'active sorties'}
           </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-space-md">
+      {/* Global Status, Alerts & Profile */}
+      <div className="flex items-center gap-3.5">
         {openIncidentsCount > 0 ? (
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-error-container/30 border border-error/30 text-error">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-critical-coral/15 border border-critical-coral/40 text-critical-coral shadow-sm">
             <span className="material-symbols-outlined text-[16px]">crisis_alert</span>
-            <span className="font-label-telemetry text-label-telemetry tracking-wide uppercase">
-              {openIncidentsCount} INCIDENT {openIncidentsCount === 1 ? 'ALERT' : 'ALERTS'}
+            <span className="font-sans text-xs font-semibold">
+              {openIncidentsCount} {openIncidentsCount === 1 ? 'incident' : 'incidents'} under triage
             </span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high border border-surface-variant text-on-surface-variant">
-            <span className="material-symbols-outlined text-[16px] text-primary-fixed">check_circle</span>
-            <span className="font-label-telemetry text-label-telemetry tracking-wide uppercase">
-              ZERO OPEN ALERTS
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-elevated border border-border text-text-secondary">
+            <span className="material-symbols-outlined text-[16px] text-telemetry-cyan">check_circle</span>
+            <span className="font-sans text-xs font-medium text-text-secondary">
+              Airspace nominal
             </span>
           </div>
         )}
 
-        <div className="h-6 w-[1px] bg-surface-variant"></div>
+        {/* Manager Operator Tile */}
+        <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-surface-elevated rounded-lg border border-border text-xs">
+          <span className="material-symbols-outlined text-[16px] text-aeron-lime">military_tech</span>
+          <span className="text-text-muted font-sans">Operator:</span>
+          <span className="font-sans font-medium text-text-primary truncate max-w-[150px]">
+            {user?.name || 'Mission Manager'}
+          </span>
+        </div>
 
-        <div className="flex items-center gap-space-sm">
-          <div className="text-right hidden md:block">
-            <div className="font-label-pill text-label-pill text-on-surface font-semibold flex items-center justify-end gap-1">
-              <span className="material-symbols-outlined text-[16px] text-primary-fixed">shield</span>
-              <span>{user?.name || 'Mission Manager'}</span>
-            </div>
-            <div className="text-[11px] font-label-telemetry text-on-surface-variant uppercase">
-              {user?.role || 'MANAGER'} // {user?.email || 'authenticated'}
-            </div>
-          </div>
+        {/* Profile Avatar with Initials */}
+        <div className="relative">
           <button
-            onClick={() => logout()}
-            title="Sign Out of Operations Command"
-            className="w-9 h-9 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface hover:text-error flex items-center justify-center border border-surface-variant transition-colors"
+            onClick={() => setProfileOpen(!profileOpen)}
+            className="w-9 h-9 rounded-full bg-surface-elevated hover:bg-surface-secondary text-aeron-lime font-sans font-bold text-xs flex items-center justify-center transition-all border border-border hover:border-aeron-lime/40 shadow-sm"
+            title="Operations Manager Profile"
           >
-            <span className="material-symbols-outlined text-[18px]">logout</span>
+            {initials}
           </button>
+
+          {profileOpen && (
+            <div className="absolute right-0 mt-2 w-64 bg-surface-elevated border border-border rounded-xl p-3 shadow-2xl z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
+              <div className="p-2 border-b border-border/80 mb-2">
+                <span className="text-text-primary block font-bold truncate text-sm font-sans">{user?.name}</span>
+                <span className="text-text-muted block text-xs truncate mt-0.5 font-sans">{user?.email}</span>
+                <span className="px-2 py-0.5 rounded bg-aeron-lime/15 text-aeron-lime font-semibold text-[11px] mt-2 inline-block border border-aeron-lime/30 font-sans">
+                  Role: {user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Manager'}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setProfileOpen(false);
+                  logout();
+                }}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-critical-coral/20 text-critical-coral transition-colors flex items-center gap-2 font-sans font-semibold text-xs"
+              >
+                <span className="material-symbols-outlined text-[18px]">logout</span>
+                <span>Sign out</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>
