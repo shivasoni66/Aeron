@@ -52,6 +52,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!userapp/lib/
+!userapp/lib/**
 parts/
 sdist/
 var/
@@ -87,4 +89,11 @@ tmp/
 temp/
 uploads/
 Backend/uploads/
+
+# Screenshots & visual captures
+documentation/screenshots/
+
+# Unreferenced intermediate drone rasters
+**/public/drone_hero.png
+**/public/drone_hero_solid.jpg
 
