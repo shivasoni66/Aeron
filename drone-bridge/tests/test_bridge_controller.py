@@ -190,6 +190,68 @@ class TestBridgeControllerSecurityAndEndpoints(unittest.TestCase):
         fake_proc.poll.return_value = 0
         self.server.manager.managed_process = None
         self.server.manager.status = STATUS_BRIDGE_STOPPED
+        self.server.manager.transport = "WIFI"
+
+    def test_diagnostics_endpoint_structure(self):
+        """Verifies GET /api/bridge/diagnostics returns all 13 required diagnostics checks."""
+        req = urllib.request.Request(f"{self.base_url}/api/bridge/diagnostics")
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertIn("timestamp", data)
+            self.assertIn("overall", data)
+            self.assertIn("summary", data)
+            self.assertEqual(data["summary"]["total"], 13)
+            self.assertEqual(len(data["checks"]), 13)
+            check_ids = [c["id"] for c in data["checks"]]
+            self.assertIn("controller_reachability", check_ids)
+            self.assertIn("python_environment", check_ids)
+            self.assertIn("configuration_integrity", check_ids)
+            self.assertIn("com_port_availability", check_ids)
+            self.assertIn("esp32_tcp_reachability", check_ids)
+            self.assertIn("transport_link_state", check_ids)
+            self.assertIn("mavlink_packet_reception", check_ids)
+            self.assertIn("pixhawk_heartbeat", check_ids)
+            self.assertIn("telemetry_decoding", check_ids)
+            self.assertIn("backend_health", check_ids)
+            self.assertIn("backend_authentication", check_ids)
+            self.assertIn("telemetry_ingestion", check_ids)
+            self.assertIn("dashboard_socket_io", check_ids)
+
+    @patch("subprocess.Popen")
+    def test_start_with_custom_transport_and_backend(self, mock_popen):
+        """Verifies POST /api/bridge/start accepts custom transport and backend URL."""
+        fake_proc = MagicMock()
+        fake_proc.pid = 88888
+        fake_proc.poll.return_value = None
+        fake_proc.stdout = None
+        mock_popen.return_value = fake_proc
+
+        req = urllib.request.Request(
+            f"{self.base_url}/api/bridge/start",
+            data=json.dumps({
+                "transport": "dual",
+                "backend_url": "https://aeron.onrender.com/api/v1",
+                "drone_id": "AERON-HEX-01"
+            }).encode("utf-8"),
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "X-AERON-TOKEN": self.token
+            }
+        )
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertTrue(data.get("success"))
+            self.assertEqual(self.server.manager.transport, "DUAL")
+            self.assertEqual(self.server.manager.backend_url, "https://aeron.onrender.com/api/v1")
+            self.assertEqual(self.server.manager.drone_id, "AERON-HEX-01")
+
+        fake_proc.poll.return_value = 0
+        self.server.manager.managed_process = None
+        self.server.manager.status = STATUS_BRIDGE_STOPPED
+        self.server.manager.transport = "WIFI"
 
 
 if __name__ == "__main__":

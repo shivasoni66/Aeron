@@ -116,6 +116,11 @@ if (process.env.MONGODB_URI) {
   process.env.MONGODB_URI = sanitizeEnvString(process.env.MONGODB_URI);
 }
 
+// Normalize CORS_ORIGINS plural variant to CORS_ORIGIN
+if (process.env.CORS_ORIGINS && !process.env.CORS_ORIGIN) {
+  process.env.CORS_ORIGIN = process.env.CORS_ORIGINS;
+}
+
 // Parse CLOUDINARY_URL if provided into individual credentials
 if (process.env.CLOUDINARY_URL) {
   try {
@@ -166,7 +171,7 @@ const envSchema = z
     CORS_ORIGIN: z
       .string()
       .default(
-        'http://localhost:5173,http://localhost:5174,https://aeron-admin.sharprad-x.tech,https://aeron-manager.sharprad-x.tech'
+        'http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,https://aeron.onrender.com,https://aeron-admin.sharprad-x.tech,https://aeron-manager.sharprad-x.tech'
       ),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info')
   })

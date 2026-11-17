@@ -136,16 +136,22 @@ export const fetchSystemHealth = async (): Promise<SystemHealthData> => {
 export const fetchCameraStatus = async (
   droneId: string
 ): Promise<{ camera: CameraStatusData | null }> => {
-  return authenticatedFetch<{ camera: CameraStatusData | null }>(
-    `/admin/drones/${droneId}/camera/status`
-  );
+  try {
+    const res = await authenticatedFetch<any>(`/admin/drones/${droneId}/camera/status`);
+    return { camera: res?.camera || res || null };
+  } catch {
+    return { camera: null };
+  }
 };
 
 export const fetchLatestCameraPreview = async (
   droneId: string
 ): Promise<{ frame: CameraFrameData | null }> => {
-  return authenticatedFetch<{ frame: CameraFrameData | null }>(
-    `/admin/drones/${droneId}/camera/preview/latest`
-  );
+  try {
+    const res = await authenticatedFetch<any>(`/admin/drones/${droneId}/camera/preview/latest`);
+    return { frame: res?.frame || res || null };
+  } catch {
+    return { frame: null };
+  }
 };
 

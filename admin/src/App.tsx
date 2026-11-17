@@ -11,6 +11,7 @@ import { LiveTelemetryPage } from './pages/LiveTelemetryPage';
 import { HardwareSensorsPage } from './pages/HardwareSensorsPage';
 import { LiveCameraPage } from './pages/LiveCameraPage';
 import { GPSTrackingPage } from './pages/GPSTrackingPage';
+import { BridgeDiagnosticsPage } from './pages/BridgeDiagnosticsPage';
 import { FlightAnalyticsPage } from './pages/FlightAnalyticsPage';
 import { FlightHistoryPage } from './pages/FlightHistoryPage';
 import { FlightLogsPage } from './pages/FlightLogsPage';
@@ -33,6 +34,7 @@ export const App: React.FC = () => {
               <Route path="hardware-and-sensors" element={<HardwareSensorsPage />} />
               <Route path="live-camera" element={<LiveCameraPage />} />
               <Route path="gps-tracking" element={<GPSTrackingPage />} />
+              <Route path="bridge-diagnostics" element={<BridgeDiagnosticsPage />} />
               <Route path="flight-analytics" element={<FlightAnalyticsPage />} />
               <Route path="flight-history" element={<FlightHistoryPage />} />
               <Route path="flight-logs" element={<FlightLogsPage />} />

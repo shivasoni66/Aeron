@@ -101,8 +101,37 @@ class TestCameraSubsystem(unittest.TestCase):
 
         payload = frame.to_backend_dict()
         self.assertEqual(payload["droneId"], "TEST-DRONE-01")
+        self.assertEqual(payload["cameraId"], "ESP32-CAM-01")
+        self.assertEqual(payload["contentType"], "image/jpeg")
+        self.assertEqual(payload["frameWidth"], 640)
+        self.assertEqual(payload["frameHeight"], 480)
         self.assertEqual(payload["telemetryLat"], 12.9716)
+        self.assertTrue(payload["frameData"].startswith("/9j/"))
         self.assertTrue(payload["frameBase64"].startswith("/9j/"))
+
+    def test_status_serialization_matches_backend_schema(self):
+        """Verifies CameraStatus serialization provides both canonical Backend enum fields and legacy fields."""
+        status = CameraStatus(
+            drone_id="AERON-HEX-01",
+            device_id="ESP32-CAM-01",
+            installed=True,
+            reachable=True,
+            streaming=True,
+            fps=2.0,
+            resolution="320x240"
+        )
+        data = status.to_backend_dict()
+        self.assertEqual(data["droneId"], "AERON-HEX-01")
+        self.assertEqual(data["cameraId"], "ESP32-CAM-01")
+        self.assertEqual(data["connectionStatus"], "STREAMING")
+        self.assertEqual(data["streamStatus"], "STREAMING")
+        self.assertEqual(data["source"], "REAL")
+        self.assertEqual(data["resolution"], "320x240")
+        self.assertEqual(data["frameRate"], 2.0)
+        # Verify legacy fields present
+        self.assertTrue(data["streaming"])
+        self.assertTrue(data["reachable"])
+        self.assertEqual(data["fps"], 2.0)
 
     def test_rate_throttling(self):
         """Ensures frame reader enforces target FPS rate throttling."""
@@ -175,6 +204,69 @@ class TestCameraSubsystem(unittest.TestCase):
             self.assertEqual(sent, 1)
             # Stale frames cleared
             self.assertEqual(len(client.frame_queue), 0)
+
+    def test_mjpeg_stream_extraction_and_lifecycle(self):
+        """Verifies background MJPEG stream consumer extracts JPEG frames and lifecycle handles start/stop."""
+        mjpeg_config = CameraConfig(
+            enabled=True,
+            drone_id="AERON-HEX-01",
+            device_id="ESP32-CAM-01",
+            host="10.231.241.200",
+            port=81,
+            protocol="MJPEG",
+            target_fps=5.0
+        )
+        health = CameraHealthTracker(
+            drone_id="AERON-HEX-01",
+            device_id="ESP32-CAM-01",
+            ip_address="10.231.241.200:81"
+        )
+        reader = ESP32CameraReader(config=mjpeg_config, health=health)
+        self.assertTrue(reader.is_mjpeg)
+        self.assertFalse(reader.is_mock)
+
+        # Create valid synthetic JPEG frame bytes
+        sample_jpeg = reader.generate_synthetic_frame("AERON-HEX-01")
+        multipart_chunk = (
+            b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+            + str(len(sample_jpeg)).encode("ascii")
+            + b"\r\n\r\n"
+            + sample_jpeg
+            + b"\r\n"
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.iter_content.return_value = [multipart_chunk[:100], multipart_chunk[100:]]
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = None
+
+        with patch.object(reader.session, "get", return_value=mock_resp):
+            # Start background thread
+            reader.start()
+            self.assertIsNotNone(reader._stream_thread)
+            self.assertTrue(reader._stream_thread.is_alive())
+
+            # Wait briefly for frame extraction
+            for _ in range(20):
+                if reader._latest_raw_frame is not None:
+                    break
+                time.sleep(0.05)
+
+            self.assertIsNotNone(reader._latest_raw_frame)
+            self.assertEqual(reader._latest_raw_frame, sample_jpeg)
+            self.assertTrue(health.installed)
+            self.assertTrue(health.reachable)
+
+            # Capture frame via rate-limited API
+            frame = reader.capture_frame(telemetry_lat=12.9716, telemetry_lon=77.5946)
+            self.assertIsNotNone(frame)
+            self.assertEqual(frame.drone_id, "AERON-HEX-01")
+            self.assertEqual(frame.telemetry_lat, 12.9716)
+
+            # Clean shutdown
+            reader.stop()
+            self.assertFalse(reader._stream_thread.is_alive())
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     AERON Ground Station - Install AERON Bridge Controller Service for Windows
 .DESCRIPTION

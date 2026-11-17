@@ -3,7 +3,6 @@ import { useHardware } from '../context/HardwareContext';
 import { AircraftSchematic } from '../components/AircraftSchematic';
 import { AdminGamification } from '../components/AdminGamification';
 import { MetricCard } from '../components/MetricCard';
-import { BridgeControllerWidget } from '../components/telemetry/BridgeControllerWidget';
 import { ACTIVE_DRONE_ID, resolveBatteryState } from '../config/drone';
 
 export const DroneOverviewPage: React.FC = () => {
@@ -99,9 +98,6 @@ export const DroneOverviewPage: React.FC = () => {
           </span>
         </div>
       </div>
-
-      {/* AERON Bridge Controller — Local Python Wi-Fi Telemetry Gateway */}
-      <BridgeControllerWidget />
 
       {/* Primary Flight Instrument KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

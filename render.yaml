@@ -1,0 +1,42 @@
+# ==============================================================================
+# AERON — Central Flight & Mission Intelligence Backend
+# Render Blueprint Infrastructure-as-Code Configuration
+# ==============================================================================
+
+services:
+  - type: web
+    name: aeron
+    runtime: node
+    rootDir: Backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DRONE_BRIDGE_TOKEN
+        sync: false
+      - key: CAMERA_BRIDGE_TOKEN
+        sync: false
+      - key: CORS_ORIGIN
+        value: http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,https://aeron.onrender.com,https://aeron-admin.sharprad-x.tech,https://aeron-manager.sharprad-x.tech
+      - key: STORAGE_PROVIDER
+        value: CLOUDINARY
+      - key: CLOUDINARY_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: LOG_LEVEL
+        value: info

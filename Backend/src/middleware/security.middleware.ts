@@ -12,7 +12,11 @@ export const corsMiddleware = cors({
     // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
     if (!origin) return callback(null, true);
 
-    if (env.corsOrigins.includes('*') || env.corsOrigins.includes(origin)) {
+    if (
+      env.corsOrigins.includes('*') ||
+      env.corsOrigins.includes(origin) ||
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+    ) {
       return callback(null, true);
     }
 

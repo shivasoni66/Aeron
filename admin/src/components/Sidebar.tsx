@@ -22,7 +22,8 @@ const navGroups: NavGroup[] = [
       { path: '/live-telemetry', label: 'Live Telemetry', icon: 'vital_signs', accent: 'text-telemetry-cyan' },
       { path: '/hardware-and-sensors', label: 'Hardware & Sensors', icon: 'memory', accent: 'text-aeron-lime' },
       { path: '/live-camera', label: 'Live Camera HUD', icon: 'videocam', accent: 'text-caution-amber' },
-      { path: '/gps-tracking', label: 'GPS Tracking', icon: 'share_location', accent: 'text-navigation-blue' }
+      { path: '/gps-tracking', label: 'GPS Tracking', icon: 'share_location', accent: 'text-navigation-blue' },
+      { path: '/bridge-diagnostics', label: 'Bridge & Diagnostics', icon: 'router', accent: 'text-aeron-lime' }
     ]
   },
   {

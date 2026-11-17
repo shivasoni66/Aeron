@@ -196,7 +196,52 @@ describe('AERON Camera — Ingestion, Relay & Admin Read API Suite', () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('success');
       expect(res.body.data.frameData).toBe(sampleValidJpegBase64);
+      expect(res.body.data.frameBase64).toBe(sampleValidJpegBase64);
+      expect(res.body.data.mimeType).toBe('image/jpeg');
       expect(res.body.data.telemetryLat).toBe(12.9716);
+    });
+
+    it('accepts real ESP32-CAM frame for AERON-HEX-01 and provides full schema compatibility', async () => {
+      vi.spyOn(Drone, 'findOne').mockResolvedValue({
+        _id: new mongoose.Types.ObjectId(),
+        droneId: 'AERON-HEX-01'
+      } as any);
+      vi.spyOn(HardwareDevice, 'findOneAndUpdate').mockResolvedValue({} as any);
+
+      const ingestRes = await request(app)
+        .post('/api/v1/camera/frames')
+        .set('x-drone-bridge-token', validBridgeToken)
+        .send({
+          cameraId: 'ESP32-CAM-01',
+          droneId: 'AERON-HEX-01',
+          capturedAt: new Date().toISOString(),
+          source: 'REAL',
+          contentType: 'image/jpeg',
+          frameWidth: 320,
+          frameHeight: 240,
+          frameSizeBytes: 8450,
+          frameData: sampleValidJpegBase64,
+          telemetryLat: 12.9716,
+          telemetryLon: 77.5946,
+          telemetryAlt: 15.0,
+          telemetryHeading: 180.0
+        });
+
+      expect(ingestRes.status).toBe(201);
+      expect(ingestRes.body.data.droneId).toBe('AERON-HEX-01');
+      expect(ingestRes.body.data.resolution).toBe('320x240');
+
+      const previewRes = await request(app)
+        .get('/api/v1/admin/drones/AERON-HEX-01/camera/preview/latest')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(previewRes.status).toBe(200);
+      expect(previewRes.body.data.frameData).toBe(sampleValidJpegBase64);
+      expect(previewRes.body.data.frameBase64).toBe(sampleValidJpegBase64);
+      expect(previewRes.body.data.mimeType).toBe('image/jpeg');
+      expect(previewRes.body.data.width).toBe(320);
+      expect(previewRes.body.data.height).toBe(240);
+      expect(previewRes.body.data.deviceId).toBe('ESP32-CAM-01');
     });
   });
 });

@@ -220,29 +220,44 @@ export interface NavigationItem {
   icon: string;
 }
 
+export type CameraSourceMode = 'direct' | 'relay';
+
 export interface CameraStatusData {
   droneId: string;
+  cameraId?: string;
   deviceId: string;
   installed: boolean;
   reachable: boolean;
   streaming: boolean;
   fps: number;
+  frameRate?: number;
+  connectionStatus?: string;
+  streamStatus?: string;
+  source?: 'REAL' | 'SIMULATION';
   lastFrameAt?: string;
   resolution?: string;
   rssi?: number;
   ipAddress?: string;
+  errorCode?: string;
   errorMessage?: string;
   recordedAt: string;
 }
 
 export interface CameraFrameData {
   droneId: string;
+  cameraId?: string;
   deviceId?: string;
   capturedAt: string;
+  source?: 'REAL' | 'SIMULATION';
+  contentType?: string;
+  mimeType?: string;
+  frameData?: string;
   frameBase64: string;
-  mimeType: string;
+  frameWidth?: number;
   width?: number;
+  frameHeight?: number;
   height?: number;
+  frameSizeBytes?: number;
   sizeBytes?: number;
   telemetryLat?: number;
   telemetryLon?: number;

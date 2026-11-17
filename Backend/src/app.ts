@@ -21,6 +21,23 @@ export const createApp = (): Express => {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(requestLogger);
 
+  // Root API Information response
+  app.get('/', (req, res) => {
+    res.status(200).json({
+      application: 'AERON',
+      name: 'AERON Flight & Mission Intelligence Backend',
+      service: 'aeron-backend',
+      version: '1.0.0',
+      status: 'online',
+      environment: process.env.NODE_ENV || 'development',
+      health: '/api/v1/health',
+      readiness: '/health/ready',
+      api: '/api/v1',
+      documentation: '/api/v1/docs',
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // Root health endpoints as specified in Task 01 requirements
   app.use('/health', healthRouter);
 
