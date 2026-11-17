@@ -1,5 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { useManagerOperations } from '../contexts/ManagerOperationsContext';
 
 interface NavItem {
   path: string;
@@ -49,6 +51,12 @@ const navGroups: NavGroup[] = [
 ];
 
 export const Sidebar: React.FC = () => {
+  const { user } = useAuth();
+  const { dashboardData, socketConnected } = useManagerOperations();
+
+  const activeMissions = dashboardData?.overview?.activeMissions || 0;
+  const availableDrones = dashboardData?.overview?.availableDrones || 0;
+
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-72 bg-[#0D141B] border-r border-border z-50 flex flex-col justify-between select-none">
       <div className="flex flex-col flex-1 min-h-0">
@@ -99,18 +107,21 @@ export const Sidebar: React.FC = () => {
         <div className="flex items-center justify-between font-sans">
           <span className="text-text-muted flex items-center gap-1.5 text-xs font-medium">
             <span className="material-symbols-outlined text-[16px] text-aeron-lime">military_tech</span>
-            Command Tier
+            Operator Clearance
           </span>
-          <span className="text-aeron-lime font-semibold text-xs">Flight Lead</span>
+          <span className="text-aeron-lime font-bold text-xs uppercase">
+            {user?.role || 'MANAGER'}
+          </span>
         </div>
-        <div className="w-full h-1.5 bg-surface-elevated rounded-full overflow-hidden border border-border/60">
-          <div className="h-full bg-gradient-to-r from-aeron-lime to-accent-soft rounded-full w-[85%]" />
+        <div className="flex justify-between items-center text-[11px] text-text-secondary font-mono">
+          <span>Active Sorties: <strong className="text-text-primary">{activeMissions}</strong></span>
+          <span>Ready Airframes: <strong className="text-aeron-lime">{availableDrones}</strong></span>
         </div>
         <div className="flex justify-between text-xs text-text-muted pt-0.5 font-sans">
-          <span>Operational link</span>
-          <span className="text-telemetry-cyan font-medium flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-telemetry-cyan animate-pulse" />
-            Secure (TLS)
+          <span>Telemetry Link</span>
+          <span className={`font-medium flex items-center gap-1.5 ${socketConnected ? 'text-aeron-lime' : 'text-caution-amber'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-aeron-lime animate-pulse' : 'bg-caution-amber'}`} />
+            {socketConnected ? 'Real-Time Sync' : 'Reconnecting...'}
           </span>
         </div>
       </div>

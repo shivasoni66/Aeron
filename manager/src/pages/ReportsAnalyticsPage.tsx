@@ -1,19 +1,54 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { fetchAnalyticsOverview } from '../services/api';
 import { AnalyticsOverviewData } from '../types';
+import { subscribeToManagerBroadcasts } from '../services/socket';
 
 export const ReportsAnalyticsPage: React.FC = () => {
   const [analytics, setAnalytics] = useState<AnalyticsOverviewData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    fetchAnalyticsOverview()
-      .then((data) => setAnalytics(data))
-      .catch((err) => console.warn(err))
-      .finally(() => setIsLoading(false));
+  const loadAnalytics = useCallback(async () => {
+    try {
+      const data = await fetchAnalyticsOverview();
+      setAnalytics(data);
+    } catch (err) {
+      console.warn('Failed to load operational analytics:', err);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    loadAnalytics();
+  }, [loadAnalytics]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToManagerBroadcasts({
+      onMissionCreated: () => loadAnalytics(),
+      onMissionUpdated: () => loadAnalytics(),
+      onMissionStageChanged: () => loadAnalytics(),
+      onIncidentCreated: () => loadAnalytics(),
+      onIncidentUpdated: () => loadAnalytics(),
+      onOutcomeReviewed: () => loadAnalytics(),
+      onOutcomePublished: () => loadAnalytics(),
+      onFlightCreated: () => loadAnalytics(),
+      onFlightUpdated: () => loadAnalytics(),
+      onReconnect: () => loadAnalytics()
+    });
+    return () => unsubscribe();
+  }, [loadAnalytics]);
+
   const metrics = analytics?.metrics;
+
+  const totalMissionVolume = useMemo(() => {
+    if (!metrics?.missionsByCategory) return 0;
+    return Object.values(metrics.missionsByCategory).reduce((acc, curr) => acc + (curr || 0), 0);
+  }, [metrics?.missionsByCategory]);
+
+  const totalIncidentCount = useMemo(() => {
+    if (!metrics?.incidentsBySeverity) return 0;
+    return Object.values(metrics.incidentsBySeverity).reduce((acc, curr) => acc + (curr || 0), 0);
+  }, [metrics?.incidentsBySeverity]);
 
   return (
     <div className="flex flex-col w-full gap-6">
@@ -103,26 +138,33 @@ export const ReportsAnalyticsPage: React.FC = () => {
             <div className="p-6 rounded-xl bg-surface-container-low border border-surface-variant/40 space-y-4 shadow-xl">
               <div className="flex items-center justify-between pb-3 border-b border-surface-variant/40">
                 <h3 className="font-sans font-bold text-base text-on-surface">Mission Volume by Vertical</h3>
-                <span className="font-mono text-[10px] text-outline">AGGREGATE SESSIONS</span>
+                <span className="font-mono text-[10px] text-outline">
+                  {totalMissionVolume} TOTAL SESSIONS
+                </span>
               </div>
               <div className="space-y-3 font-mono text-xs">
                 {Object.entries(metrics?.missionsByCategory || {}).length === 0 ? (
                   <div className="text-outline py-8 text-center">NO MISSION DATA RECORDED</div>
                 ) : (
-                  Object.entries(metrics?.missionsByCategory || {}).map(([cat, count]) => (
-                    <div key={cat} className="space-y-1.5">
-                      <div className="flex justify-between text-secondary">
-                        <span className="text-on-surface font-medium">{cat.replace(/_/g, ' ')}</span>
-                        <strong className="text-primary-fixed">{count}</strong>
+                  Object.entries(metrics?.missionsByCategory || {}).map(([cat, count]) => {
+                    const pct = totalMissionVolume > 0 ? Math.round((count / totalMissionVolume) * 100) : 0;
+                    return (
+                      <div key={cat} className="space-y-1.5">
+                        <div className="flex justify-between text-secondary">
+                          <span className="text-on-surface font-medium">{cat.replace(/_/g, ' ')}</span>
+                          <strong className="text-primary-fixed">
+                            {count} <span className="text-[10px] text-outline font-normal">({pct}%)</span>
+                          </strong>
+                        </div>
+                        <div className="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden border border-surface-variant/30">
+                          <div
+                            className="bg-primary-fixed h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden border border-surface-variant/30">
-                        <div
-                          className="bg-primary-fixed h-full rounded-full transition-all duration-500"
-                          style={{ width: `${Math.min(100, count * 20)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -131,36 +173,43 @@ export const ReportsAnalyticsPage: React.FC = () => {
             <div className="p-6 rounded-xl bg-surface-container-low border border-surface-variant/40 space-y-4 shadow-xl">
               <div className="flex items-center justify-between pb-3 border-b border-surface-variant/40">
                 <h3 className="font-sans font-bold text-base text-on-surface">Incidents by Severity Rating</h3>
-                <span className="font-mono text-[10px] text-outline">SAFETY METRICS</span>
+                <span className="font-mono text-[10px] text-outline">
+                  {totalIncidentCount} RECORDED EVENTS
+                </span>
               </div>
               <div className="space-y-3 font-mono text-xs">
                 {Object.entries(metrics?.incidentsBySeverity || {}).length === 0 ? (
                   <div className="text-outline py-8 text-center">ZERO INCIDENTS RECORDED</div>
                 ) : (
-                  Object.entries(metrics?.incidentsBySeverity || {}).map(([sev, count]) => (
-                    <div key={sev} className="space-y-1.5">
-                      <div className="flex justify-between text-secondary">
-                        <span className={sev === 'CRITICAL' ? 'text-status-danger font-bold' : 'text-on-surface'}>
-                          {sev}
-                        </span>
-                        <strong className="text-on-surface">{count}</strong>
+                  Object.entries(metrics?.incidentsBySeverity || {}).map(([sev, count]) => {
+                    const pct = totalIncidentCount > 0 ? Math.round((count / totalIncidentCount) * 100) : 0;
+                    return (
+                      <div key={sev} className="space-y-1.5">
+                        <div className="flex justify-between text-secondary">
+                          <span className={sev === 'CRITICAL' ? 'text-status-danger font-bold' : 'text-on-surface'}>
+                            {sev}
+                          </span>
+                          <strong className="text-on-surface">
+                            {count} <span className="text-[10px] text-outline font-normal">({pct}%)</span>
+                          </strong>
+                        </div>
+                        <div className="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden border border-surface-variant/30">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              sev === 'CRITICAL'
+                                ? 'bg-status-danger'
+                                : sev === 'HIGH'
+                                ? 'bg-status-warning'
+                                : sev === 'MEDIUM'
+                                ? 'bg-status-info'
+                                : 'bg-primary-fixed'
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden border border-surface-variant/30">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            sev === 'CRITICAL'
-                              ? 'bg-status-danger'
-                              : sev === 'HIGH'
-                              ? 'bg-status-warning'
-                              : sev === 'MEDIUM'
-                              ? 'bg-status-info'
-                              : 'bg-primary-fixed'
-                          }`}
-                          style={{ width: `${Math.min(100, count * 25)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>

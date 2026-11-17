@@ -15,7 +15,10 @@ import {
   CreateMissionSchema,
   UpdateMissionSchema,
   CreateMissionEventSchema,
+  CreateIncidentSchema,
   UpdateIncidentSchema,
+  CreateFlightSessionSchema,
+  UpdateFlightSessionSchema,
   ReviewOutcomeSchema,
   PublishOutcomeSchema
 } from '../validators/manager.validator.js';
@@ -581,6 +584,77 @@ export class ManagerController {
   }
 
   /**
+   * POST /api/v1/manager/incidents
+   * Creates a new incident log with severity, classification, and geo-coordinates.
+   */
+  public static async createIncident(req: Request, res: Response): Promise<void> {
+    try {
+      const validated = CreateIncidentSchema.parse(req.body);
+
+      // Generate unique incidentId
+      const count = await Incident.countDocuments();
+      const incidentId = `INC-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${String(count + 1).padStart(4, '0')}`;
+
+      let missionObjectId: mongoose.Types.ObjectId | undefined;
+      if (validated.missionId) {
+        const isOid = mongoose.isValidObjectId(validated.missionId);
+        const mission = await Mission.findOne(
+          isOid
+            ? { $or: [{ _id: validated.missionId }, { missionId: validated.missionId.toUpperCase() }] }
+            : { missionId: validated.missionId.toUpperCase() }
+        );
+        if (mission) missionObjectId = mission._id;
+      }
+
+      const incident = new Incident({
+        incidentId,
+        incidentType: validated.incidentType,
+        severity: validated.severity || 'MEDIUM',
+        status: 'OPEN',
+        description: validated.description,
+        isConfidential: validated.isConfidential ?? false,
+        missionId: missionObjectId,
+        location: validated.location || {
+          type: 'Point',
+          coordinates: [77.5946, 12.9716]
+        },
+        reportedAt: new Date(),
+        assignedManager: validated.assignedManager && mongoose.isValidObjectId(validated.assignedManager)
+          ? new mongoose.Types.ObjectId(validated.assignedManager)
+          : req.user?.id ? new mongoose.Types.ObjectId(req.user.id) : undefined
+      });
+
+      await incident.save();
+
+      // Audit Log
+      await AuditLog.create({
+        actorId: req.user?.id ? new mongoose.Types.ObjectId(req.user.id) : undefined,
+        action: 'INCIDENT_CREATED',
+        entityType: 'Incident',
+        entityId: incident.incidentId,
+        source: req.user?.role === 'admin' ? 'ADMIN_WEB' : 'MANAGER_WEB',
+        metadata: { severity: incident.severity, isConfidential: incident.isConfidential }
+      });
+
+      const populated = await Incident.findById(incident._id)
+        .populate('missionId', 'missionId title missionType')
+        .populate('assignedManager', 'name email role');
+
+      safeEmit('incident:created', populated || incident);
+      safeEmit('incident:updated', populated || incident);
+
+      res.status(201).json({
+        status: 'success',
+        message: 'Incident reported and recorded successfully',
+        data: { incident: populated || incident }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(400).json({ status: 'error', code: 'INCIDENT_CREATE_FAILED', message: msg });
+    }
+  }
+
+  /**
    * GET /api/v1/manager/incidents/:incidentId
    */
   public static async getIncidentById(req: Request, res: Response): Promise<void> {
@@ -759,6 +833,126 @@ export class ManagerController {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       res.status(500).json({ status: 'error', code: 'FLIGHT_FETCH_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/manager/flights
+   * Creates a new flight session record.
+   */
+  public static async createFlight(req: Request, res: Response): Promise<void> {
+    try {
+      const validated = CreateFlightSessionSchema.parse(req.body);
+
+      // Find drone
+      const isOid = mongoose.isValidObjectId(validated.droneId);
+      const drone = await Drone.findOne(
+        isOid
+          ? { $or: [{ _id: validated.droneId }, { droneId: validated.droneId }] }
+          : { droneId: validated.droneId }
+      );
+      if (!drone) {
+        res.status(404).json({ status: 'error', code: 'DRONE_NOT_FOUND', message: `Drone '${validated.droneId}' not found` });
+        return;
+      }
+
+      let missionObjectId: mongoose.Types.ObjectId | undefined;
+      if (validated.missionId) {
+        const isMOid = mongoose.isValidObjectId(validated.missionId);
+        const mission = await Mission.findOne(
+          isMOid
+            ? { $or: [{ _id: validated.missionId }, { missionId: validated.missionId.toUpperCase() }] }
+            : { missionId: validated.missionId.toUpperCase() }
+        );
+        if (mission) missionObjectId = mission._id;
+      }
+
+      const count = await FlightSession.countDocuments();
+      const flightSessionId = `FLT-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${String(count + 1).padStart(4, '0')}`;
+
+      const flight = new FlightSession({
+        flightSessionId,
+        droneId: drone._id,
+        missionId: missionObjectId,
+        startedAt: new Date(),
+        status: 'ACTIVE',
+        source: validated.source || 'REAL',
+        startLocation: validated.startLocation || {
+          type: 'Point',
+          coordinates: [77.5946, 12.9716]
+        },
+        durationSeconds: 0,
+        summary: validated.summary || `Airborne sortie logged for ${drone.droneId}`
+      });
+
+      await flight.save();
+
+      const populated = await FlightSession.findById(flight._id)
+        .populate('droneId', 'droneId displayName model operationalStatus')
+        .populate('missionId', 'missionId title missionType');
+
+      safeEmit('flight:created', populated || flight);
+      safeEmit('flight:updated', populated || flight);
+
+      res.status(201).json({
+        status: 'success',
+        message: 'Flight session initialized',
+        data: { flight: populated || flight }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(400).json({ status: 'error', code: 'FLIGHT_CREATE_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * PATCH /api/v1/manager/flights/:flightSessionId
+   * Updates flight session status (COMPLETED/ABORTED), duration, and end location.
+   */
+  public static async updateFlight(req: Request, res: Response): Promise<void> {
+    try {
+      const flightSessionId = String(req.params.flightSessionId);
+      const validated = UpdateFlightSessionSchema.parse(req.body);
+
+      const isOid = mongoose.isValidObjectId(flightSessionId);
+      const flight = await FlightSession.findOne(
+        isOid
+          ? { $or: [{ _id: flightSessionId }, { flightSessionId: flightSessionId.toUpperCase() }] }
+          : { flightSessionId: flightSessionId.toUpperCase() }
+      );
+      if (!flight) {
+        res.status(404).json({ status: 'error', code: 'FLIGHT_NOT_FOUND', message: `Flight session '${flightSessionId}' not found` });
+        return;
+      }
+
+      if (validated.status) {
+        flight.status = validated.status;
+        if (['COMPLETED', 'ABORTED'].includes(validated.status) && !flight.endedAt) {
+          flight.endedAt = new Date();
+          if (!flight.durationSeconds || flight.durationSeconds === 0) {
+            flight.durationSeconds = Math.max(1, Math.round((flight.endedAt.getTime() - flight.startedAt.getTime()) / 1000));
+          }
+        }
+      }
+      if (validated.durationSeconds !== undefined) flight.durationSeconds = validated.durationSeconds;
+      if (validated.endLocation) flight.endLocation = validated.endLocation;
+      if (validated.summary) flight.summary = validated.summary;
+
+      await flight.save();
+
+      const populated = await FlightSession.findById(flight._id)
+        .populate('droneId', 'droneId displayName model operationalStatus')
+        .populate('missionId', 'missionId title missionType');
+
+      safeEmit('flight:updated', populated || flight);
+
+      res.status(200).json({
+        status: 'success',
+        data: { flight: populated || flight }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(400).json({ status: 'error', code: 'FLIGHT_UPDATE_FAILED', message: msg });
     }
   }
 

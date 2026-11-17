@@ -8,6 +8,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { getDatabaseStatus } from '../config/database.js';
 import { env } from '../config/env.js';
 import { CameraController } from './camera.controller.js';
+import { getSocketServer } from '../sockets/socket.server.js';
 
 const getVerifiedPhysicalHardware = (droneId: any): any[] => [
   {
@@ -189,6 +190,82 @@ export class AdminController {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       res.status(500).json({ status: 'error', code: 'DRONES_FETCH_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/admin/drones
+   * Register a new drone airframe in the fleet registry.
+   */
+  public static async registerDrone(req: Request, res: Response): Promise<void> {
+    try {
+      const { droneId, displayName, model, flightController, serialNumber, maxFlightTimeMinutes, firmwareVersion } = req.body;
+      if (!droneId || !displayName || !model) {
+        res.status(400).json({ status: 'error', code: 'VALIDATION_ERROR', message: 'droneId, displayName, and model are required' });
+        return;
+      }
+
+      const existing = await Drone.findOne({ droneId });
+      if (existing) {
+        res.status(409).json({ status: 'error', code: 'DRONE_EXISTS', message: `Drone '${droneId}' already registered` });
+        return;
+      }
+
+      const drone = new Drone({
+        droneId,
+        displayName,
+        model,
+        flightController: flightController || 'Pixhawk 2.4.8',
+        serialNumber: serialNumber || `SN-${droneId}`,
+        firmwareVersion: firmwareVersion || 'ArduCopter 4.5.1',
+        maxFlightTimeMinutes: maxFlightTimeMinutes || 25,
+        operationalStatus: 'READY'
+      });
+      await drone.save();
+
+      try {
+        const io = getSocketServer();
+        io.emit('drone:registered', drone);
+        io.emit('drone:updated', drone);
+      } catch {}
+
+      res.status(201).json({ status: 'success', message: 'Drone registered successfully', data: { drone } });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'DRONE_REGISTER_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * PATCH /api/v1/admin/drones/:droneId
+   * Update operational status or configuration of an airframe.
+   */
+  public static async updateDrone(req: Request, res: Response): Promise<void> {
+    try {
+      const droneId = req.params.droneId;
+      const drone = await Drone.findOne({ droneId });
+      if (!drone) {
+        res.status(404).json({ status: 'error', code: 'DRONE_NOT_FOUND', message: `Drone '${droneId}' not found` });
+        return;
+      }
+
+      const { operationalStatus, displayName, model, flightController } = req.body;
+      if (operationalStatus) drone.operationalStatus = operationalStatus;
+      if (displayName) drone.displayName = displayName;
+      if (model) drone.model = model;
+      if (flightController) drone.flightController = flightController;
+
+      await drone.save();
+
+      try {
+        const io = getSocketServer();
+        io.emit('drone:updated', drone);
+      } catch {}
+
+      res.status(200).json({ status: 'success', message: 'Drone updated successfully', data: { drone } });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'DRONE_UPDATE_FAILED', message: msg });
     }
   }
 

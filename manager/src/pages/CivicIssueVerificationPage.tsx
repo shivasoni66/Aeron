@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchMissions, fetchIncidents, fetchCitizenReports, updateCitizenReport } from '../services/api';
+import { subscribeToManagerBroadcasts } from '../services/socket';
 import { MissionData, IncidentData, CitizenReportData } from '../types';
 import { CreateMissionModal } from '../components/CreateMissionModal';
 
@@ -11,7 +12,7 @@ export const CivicIssueVerificationPage: React.FC = () => {
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
   const [triageNotice, setTriageNotice] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [mRes, iRes, rRes] = await Promise.all([
@@ -27,11 +28,22 @@ export const CivicIssueVerificationPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
+
+  useEffect(() => {
+    const cleanup = subscribeToManagerBroadcasts({
+      onMissionCreated: () => loadData(),
+      onMissionUpdated: () => loadData(),
+      onIncidentUpdated: () => loadData(),
+      onReportUpdated: () => loadData(),
+      onReconnect: () => loadData()
+    });
+    return () => cleanup();
+  }, [loadData]);
 
   const handleUpdateReportStage = async (reportId: string, newStatus: string, stage: number) => {
     try {
@@ -266,7 +278,7 @@ export const CivicIssueVerificationPage: React.FC = () => {
 
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-text-muted text-[11px] font-mono">
-                    AIRFRAME: <strong className="text-text-primary">HEX-01</strong>
+                    AIRFRAME: <strong className="text-text-primary">{m.assignedDrones?.[0]?.displayName || m.assignedDrones?.[0]?.droneId || 'Unassigned'}</strong>
                   </span>
                 </div>
               </div>

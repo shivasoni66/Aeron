@@ -175,6 +175,21 @@ export const fetchIncident = async (incidentId: string): Promise<{ incident: Inc
   return authenticatedFetch(`/manager/incidents/${incidentId}`);
 };
 
+export const createIncident = async (payload: {
+  incidentType: string;
+  severity?: string;
+  description: string;
+  missionId?: string;
+  location?: { type: 'Point'; coordinates: [number, number] };
+  isConfidential?: boolean;
+  assignedManager?: string;
+}): Promise<{ incident: IncidentData }> => {
+  return authenticatedFetch('/manager/incidents', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
 export const updateIncident = async (
   incidentId: string,
   payload: {
@@ -206,6 +221,34 @@ export const fetchFlights = async (params: {
   if (params.search) q.append('search', params.search);
 
   return authenticatedFetch(`/manager/flights?${q.toString()}`);
+};
+
+export const createFlight = async (payload: {
+  droneId: string;
+  missionId?: string;
+  source?: 'REAL' | 'SIMULATION';
+  startLocation?: { type: 'Point'; coordinates: [number, number] };
+  summary?: string;
+}): Promise<{ flight: FlightSessionData }> => {
+  return authenticatedFetch('/manager/flights', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const updateFlight = async (
+  flightSessionId: string,
+  payload: {
+    status?: string;
+    durationSeconds?: number;
+    endLocation?: { type: 'Point'; coordinates: [number, number] };
+    summary?: string;
+  }
+): Promise<{ flight: FlightSessionData }> => {
+  return authenticatedFetch(`/manager/flights/${flightSessionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
 };
 
 export const fetchFlight = async (

@@ -141,7 +141,23 @@ export interface TelemetryPoint {
   relativeAltitude?: number;
   groundSpeed?: number;
   heading?: number;
+  roll?: number;
+  pitch?: number;
+  yaw?: number;
+  climbRate?: number;
+  batteryVoltage?: number;
+  batteryCurrent?: number;
+  batteryPercentage?: number | null;
+  batteryCellVoltage?: number | null;
+  batteryRemainingMah?: number | null;
+  gpsFixType?: string;
+  satellites?: number;
+  hdop?: number;
+  flightMode?: string;
+  armed?: boolean;
+  connectionStatus?: string;
   recordedAt: string;
+  receivedAt?: string;
   source?: string;
   isSimulated?: boolean;
 }

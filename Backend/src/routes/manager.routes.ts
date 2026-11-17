@@ -20,12 +20,15 @@ managerRouter.post('/missions/:missionId/events', ManagerController.createMissio
 
 // Incident Management
 managerRouter.get('/incidents', ManagerController.getIncidents);
+managerRouter.post('/incidents', ManagerController.createIncident);
 managerRouter.get('/incidents/:incidentId', ManagerController.getIncidentById);
 managerRouter.patch('/incidents/:incidentId', ManagerController.updateIncident);
 
 // Trip & Route History (Flight Sessions)
 managerRouter.get('/flights', ManagerController.getFlights);
+managerRouter.post('/flights', ManagerController.createFlight);
 managerRouter.get('/flights/:flightSessionId', ManagerController.getFlightById);
+managerRouter.patch('/flights/:flightSessionId', ManagerController.updateFlight);
 
 // Mission Outcomes & Citizen Publishing Pipeline
 managerRouter.get('/outcomes', ManagerController.getOutcomes);

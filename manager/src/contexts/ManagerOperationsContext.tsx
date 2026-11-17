@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { fetchDashboard } from '../services/api';
-import { subscribeToManagerBroadcasts } from '../services/socket';
+import { subscribeToManagerBroadcasts, getSocket } from '../services/socket';
 import { DashboardData } from '../types';
 
 interface ManagerOperationsContextType {
@@ -9,6 +9,7 @@ interface ManagerOperationsContextType {
   error: string | null;
   activeMissionsCount: number;
   openIncidentsCount: number;
+  socketConnected: boolean;
   refreshDashboard: () => Promise<void>;
 }
 
@@ -18,7 +19,34 @@ export const ManagerOperationsProvider: React.FC<{ children: React.ReactNode }> 
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [socketConnected, setSocketConnected] = useState<boolean>(() => {
+    try {
+      return getSocket().connected;
+    } catch {
+      return false;
+    }
+  });
   const requestIdRef = useRef<number>(0);
+
+  useEffect(() => {
+    try {
+      const s = getSocket();
+      const handleConnect = () => setSocketConnected(true);
+      const handleDisconnect = () => setSocketConnected(false);
+
+      s.on('connect', handleConnect);
+      s.on('disconnect', handleDisconnect);
+
+      setSocketConnected(s.connected);
+
+      return () => {
+        s.off('connect', handleConnect);
+        s.off('disconnect', handleDisconnect);
+      };
+    } catch {
+      // socket init fallback
+    }
+  }, []);
 
   const refreshDashboard = useCallback(async () => {
     const currentReq = ++requestIdRef.current;
@@ -50,9 +78,17 @@ export const ManagerOperationsProvider: React.FC<{ children: React.ReactNode }> 
     const cleanup = subscribeToManagerBroadcasts({
       onMissionCreated: () => refreshDashboard(),
       onMissionUpdated: () => refreshDashboard(),
+      onMissionStageChanged: () => refreshDashboard(),
+      onIncidentCreated: () => refreshDashboard(),
       onIncidentUpdated: () => refreshDashboard(),
       onOutcomeReviewed: () => refreshDashboard(),
-      onOutcomePublished: () => refreshDashboard()
+      onOutcomePublished: () => refreshDashboard(),
+      onDroneRegistered: () => refreshDashboard(),
+      onDroneUpdated: () => refreshDashboard(),
+      onFlightCreated: () => refreshDashboard(),
+      onFlightUpdated: () => refreshDashboard(),
+      onReportUpdated: () => refreshDashboard(),
+      onReconnect: () => refreshDashboard()
     });
 
     const interval = setInterval(refreshDashboard, 15000);
@@ -75,6 +111,7 @@ export const ManagerOperationsProvider: React.FC<{ children: React.ReactNode }> 
         error,
         activeMissionsCount,
         openIncidentsCount,
+        socketConnected,
         refreshDashboard
       }}
     >

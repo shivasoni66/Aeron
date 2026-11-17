@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchOutcomes, publishOutcome } from '../services/api';
 import { MissionOutcomeData } from '../types';
 import { OutcomeReviewModal } from '../components/OutcomeReviewModal';
+import { subscribeToManagerBroadcasts } from '../services/socket';
 
 export const MissionOutcomesPage: React.FC = () => {
   const [outcomes, setOutcomes] = useState<MissionOutcomeData[]>([]);
@@ -12,7 +13,7 @@ export const MissionOutcomesPage: React.FC = () => {
   const [selectedOutcome, setSelectedOutcome] = useState<MissionOutcomeData | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const loadOutcomes = async (p = 1) => {
+  const loadOutcomes = useCallback(async (p = 1) => {
     setIsLoading(true);
     try {
       const res = await fetchOutcomes({
@@ -24,15 +25,24 @@ export const MissionOutcomesPage: React.FC = () => {
       setOutcomes(res.outcomes || []);
       setPagination(res.pagination || { page: p, limit: 15, total: 0, totalPages: 1 });
     } catch (err: unknown) {
-      console.warn(err);
+      console.warn('Failed to load mission outcomes:', err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [reviewStatusFilter, outcomeTypeFilter]);
 
   useEffect(() => {
     loadOutcomes(1);
-  }, [reviewStatusFilter, outcomeTypeFilter]);
+  }, [loadOutcomes]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToManagerBroadcasts({
+      onOutcomeReviewed: () => loadOutcomes(pagination.page),
+      onOutcomePublished: () => loadOutcomes(pagination.page),
+      onReconnect: () => loadOutcomes(pagination.page)
+    });
+    return () => unsubscribe();
+  }, [loadOutcomes, pagination.page]);
 
   const handleStagePublish = async (outcomeId: string) => {
     try {

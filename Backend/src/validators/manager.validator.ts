@@ -43,12 +43,46 @@ export const CreateMissionEventSchema = z.object({
   metadata: z.record(z.unknown()).optional()
 });
 
+export const CreateIncidentSchema = z.object({
+  incidentType: z.string().trim().min(2, 'Incident type is required').max(100),
+  severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('MEDIUM'),
+  description: z.string().trim().min(3, 'Incident description is required'),
+  missionId: z.string().optional(),
+  location: z.object({
+    type: z.literal('Point').default('Point'),
+    coordinates: z.tuple([z.number(), z.number()])
+  }).optional(),
+  isConfidential: z.boolean().optional().default(false),
+  assignedManager: z.string().optional()
+});
+
 export const UpdateIncidentSchema = z.object({
   status: z.enum(['OPEN', 'INVESTIGATING', 'MITIGATED', 'RESOLVED', 'CLOSED']).optional(),
   severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
   description: z.string().trim().min(3).optional(),
   assignedManager: z.string().optional(),
   resolutionNotes: z.string().trim().optional()
+});
+
+export const CreateFlightSessionSchema = z.object({
+  droneId: z.string().trim().min(1, 'Drone ID is required'),
+  missionId: z.string().optional(),
+  source: z.enum(['REAL', 'SIMULATION']).default('REAL'),
+  startLocation: z.object({
+    type: z.literal('Point').default('Point'),
+    coordinates: z.tuple([z.number(), z.number()])
+  }).optional(),
+  summary: z.string().optional()
+});
+
+export const UpdateFlightSessionSchema = z.object({
+  status: z.enum(['PLANNED', 'ACTIVE', 'COMPLETED', 'ABORTED']).optional(),
+  durationSeconds: z.number().min(0).optional(),
+  endLocation: z.object({
+    type: z.literal('Point').default('Point'),
+    coordinates: z.tuple([z.number(), z.number()])
+  }).optional(),
+  summary: z.string().optional()
 });
 
 export const ReviewOutcomeSchema = z.object({
