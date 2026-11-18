@@ -9,7 +9,11 @@ import {
   AnalyticsOverviewData,
   DroneData,
   MissionEventData,
-  CitizenReportData
+  CitizenReportData,
+  MissionSessionData,
+  ObservationData,
+  OperatingMode,
+  BhopalMicroClimateData
 } from '../types';
 
 // Resolve base origin from environment or default to deployed Render backend
@@ -40,11 +44,49 @@ const authenticatedFetch = async <T>(endpoint: string, options: RequestInit = {}
     headers['X-CSRF-Token'] = csrf;
   }
 
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-    credentials: 'include'
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+      credentials: 'include'
+    });
+
+    // If remote backend returned 404/502/503/504 and running locally, seamlessly fallback to local backend port 5000
+    if (!res.ok && (res.status === 404 || res.status >= 502) && API_BASE_URL.includes('onrender.com') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      try {
+        const localRes = await fetch(`http://localhost:5000/api/v1${endpoint}`, {
+          ...options,
+          headers,
+          credentials: 'include'
+        });
+        if (localRes.ok) {
+          const localBody = await localRes.json();
+          return localBody.data;
+        }
+      } catch {
+        // Fall back to original res handling
+      }
+    }
+  } catch (err) {
+    // If network failed to remote Render and running on localhost, fallback to local backend port 5000
+    if (API_BASE_URL.includes('onrender.com') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      try {
+        const localRes = await fetch(`http://localhost:5000/api/v1${endpoint}`, {
+          ...options,
+          headers,
+          credentials: 'include'
+        });
+        if (localRes.ok) {
+          const localBody = await localRes.json();
+          return localBody.data;
+        }
+      } catch {
+        // Fall through
+      }
+    }
+    throw err;
+  }
 
   const body = await res.json();
   if (!res.ok) {
@@ -57,8 +99,17 @@ const authenticatedFetch = async <T>(endpoint: string, options: RequestInit = {}
 export const checkApiHealth = async () => {
   try {
     const res = await fetch(`${BACKEND_ROOT_URL}/health`);
-    return await res.json();
+    if (res.ok) return await res.json();
+    throw new Error(`Status ${res.status}`);
   } catch (err) {
+    if (BACKEND_ROOT_URL.includes('onrender.com') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      try {
+        const localRes = await fetch(`http://localhost:5000/health`);
+        if (localRes.ok) return await localRes.json();
+      } catch {
+        // Fall through
+      }
+    }
     return { status: 'offline', error: err instanceof Error ? err.message : 'Unknown error' };
   }
 };
@@ -66,8 +117,17 @@ export const checkApiHealth = async () => {
 export const checkApiReadiness = async () => {
   try {
     const res = await fetch(`${BACKEND_ROOT_URL}/health/ready`);
-    return await res.json();
+    if (res.ok) return await res.json();
+    throw new Error(`Status ${res.status}`);
   } catch (err) {
+    if (BACKEND_ROOT_URL.includes('onrender.com') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      try {
+        const localRes = await fetch(`http://localhost:5000/health/ready`);
+        if (localRes.ok) return await localRes.json();
+      } catch {
+        // Fall through
+      }
+    }
     return { status: 'degraded', error: err instanceof Error ? err.message : 'Unknown error' };
   }
 };
@@ -334,6 +394,121 @@ export const updateCitizenReport = async (
 };
 
 // Telemetry
-export const fetchLatestTelemetry = async (droneId: string): Promise<{ telemetry: TelemetryPoint | null }> => {
-  return authenticatedFetch<{ telemetry: TelemetryPoint | null }>(`/telemetry/latest/${droneId}`);
+export const fetchLatestTelemetry = async (
+  droneId: string,
+  options?: { source?: 'REAL' | 'SIMULATION' }
+): Promise<{ telemetry: TelemetryPoint | null }> => {
+  const q = options?.source ? `?source=${options.source}` : '';
+  return authenticatedFetch<{ telemetry: TelemetryPoint | null }>(`/telemetry/latest/${droneId}${q}`);
+};
+
+export const fetchDroneLatestTelemetry = async (
+  droneId: string,
+  options?: { source?: 'REAL' | 'SIMULATION' }
+): Promise<{ telemetry: TelemetryPoint | null }> => {
+  const q = options?.source ? `?source=${options.source}` : '';
+  return authenticatedFetch<{ telemetry: TelemetryPoint | null }>(`/manager/drones/${droneId}/telemetry/latest${q}`);
+};
+
+// Central Mission Control & Operating Mode
+export const fetchMissionControlState = async (): Promise<{ session: MissionSessionData }> => {
+  return authenticatedFetch<{ session: MissionSessionData }>('/manager/mission-control/state');
+};
+
+export const setOperatingMode = async (mode: OperatingMode): Promise<{ session: MissionSessionData }> => {
+  return authenticatedFetch<{ session: MissionSessionData }>('/manager/mission-control/mode', {
+    method: 'POST',
+    body: JSON.stringify({ mode })
+  });
+};
+
+export const activateMissionControl = async (payload: {
+  mode: OperatingMode;
+  missionId?: string;
+}): Promise<{ session: MissionSessionData; mission?: MissionData }> => {
+  return authenticatedFetch<{ session: MissionSessionData; mission?: MissionData }>('/manager/mission-control/activate', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const pauseMissionControl = async (): Promise<{ session: MissionSessionData }> => {
+  return authenticatedFetch<{ session: MissionSessionData }>('/manager/mission-control/pause', {
+    method: 'POST'
+  });
+};
+
+export const resumeMissionControl = async (): Promise<{ session: MissionSessionData }> => {
+  return authenticatedFetch<{ session: MissionSessionData }>('/manager/mission-control/resume', {
+    method: 'POST'
+  });
+};
+
+export const stopMissionControl = async (): Promise<{ session: MissionSessionData }> => {
+  return authenticatedFetch<{ session: MissionSessionData }>('/manager/mission-control/stop', {
+    method: 'POST'
+  });
+};
+
+// Live AI Observations
+export const fetchObservations = async (params: {
+  missionType?: string;
+  missionId?: string;
+  verificationStatus?: string;
+  page?: number;
+  limit?: number;
+} = {}): Promise<{
+  observations: ObservationData[];
+  total: number;
+  page: number;
+  totalPages: number;
+}> => {
+  const q = new URLSearchParams();
+  if (params.missionType) q.append('missionType', params.missionType);
+  if (params.missionId) q.append('missionId', params.missionId);
+  if (params.verificationStatus) q.append('verificationStatus', params.verificationStatus);
+  if (params.page) q.append('page', params.page.toString());
+  if (params.limit) q.append('limit', params.limit.toString());
+  const qs = q.toString() ? `?${q.toString()}` : '';
+  return authenticatedFetch<{
+    observations: ObservationData[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }>(`/manager/observations${qs}`);
+};
+
+export const reviewObservation = async (
+  id: string,
+  payload: {
+    verificationStatus: 'ACCEPTED' | 'REJECTED';
+    reviewNotes?: string;
+  }
+): Promise<{ observation: ObservationData }> => {
+  return authenticatedFetch<{ observation: ObservationData }>(`/manager/observations/${id}/review`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+};
+
+// Micro-Climate Environmental Telemetry
+export const fetchEnvironmentalLatest = async (): Promise<{
+  serviceStatus: string;
+  lastReadingAt: string | null;
+  sensors: Record<string, any> | null;
+  droneId?: string;
+  details: string;
+}> => {
+  return authenticatedFetch<{
+    serviceStatus: string;
+    lastReadingAt: string | null;
+    sensors: Record<string, any> | null;
+    droneId?: string;
+    details: string;
+  }>('/manager/environmental/latest');
+};
+
+export const fetchBhopalMicroClimate = async (forceRefresh?: boolean): Promise<BhopalMicroClimateData> => {
+  const qs = forceRefresh ? '?refresh=true' : '';
+  return authenticatedFetch<BhopalMicroClimateData>(`/manager/environmental/bhopal${qs}`);
 };

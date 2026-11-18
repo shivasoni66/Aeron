@@ -41,10 +41,25 @@ managerRouter.get('/analytics/overview', ManagerController.getAnalyticsOverview)
 
 // Aircraft Assignment Registry
 managerRouter.get('/drones/available', ManagerController.getAvailableDrones);
+managerRouter.get('/drones/:droneId/telemetry/latest', ManagerController.getDroneLatestTelemetry);
 
 // Citizen Civic Reports Intake & Triage
 managerRouter.get('/citizen-reports', ManagerController.getCitizenReports);
 managerRouter.patch('/citizen-reports/:reportId', ManagerController.updateCitizenReport);
+
+// Central Mission Control & Operating Mode
+managerRouter.get('/mission-control/state', ManagerController.getMissionControlState);
+managerRouter.post('/mission-control/mode', ManagerController.setOperatingMode);
+managerRouter.post('/mission-control/activate', ManagerController.activateMissionControl);
+managerRouter.post('/mission-control/pause', ManagerController.pauseMissionControl);
+managerRouter.post('/mission-control/resume', ManagerController.resumeMissionControl);
+managerRouter.post('/mission-control/stop', ManagerController.stopMissionControl);
+
+// Live AI Observations & Environmental Monitoring
+managerRouter.get('/observations', ManagerController.getObservations);
+managerRouter.patch('/observations/:id/review', ManagerController.reviewObservation);
+managerRouter.get('/environmental/latest', ManagerController.getEnvironmentalLatest);
+managerRouter.get('/environmental/bhopal', ManagerController.getBhopalMicroClimate);
 
 export { managerRouter };
 
