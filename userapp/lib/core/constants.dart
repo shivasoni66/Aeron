@@ -5,13 +5,18 @@ class AppConstants {
   static const String appSubTitle = 'CITIZEN SERVICES';
 
   /// Base API URL. Can be overridden via dart-define:
-  /// flutter run --dart-define=AERON_API_URL=https://aeron.onrender.com/api/v1
+  /// flutter run --dart-define=AERON_API_URL=http://127.0.0.1:5000/api/v1
   static String apiBaseUrl = const String.fromEnvironment(
     'AERON_API_URL',
-    defaultValue: 'https://aeron.onrender.com/api/v1',
+    defaultValue: 'http://127.0.0.1:5000/api/v1',
   );
 
   static const String prodApiBaseUrl = 'https://aeron.onrender.com/api/v1';
+
+  static String get socketBaseUrl {
+    final clean = apiBaseUrl.replaceAll('/api/v1', '').replaceAll('/api', '');
+    return clean;
+  }
 
   // Canonical Citizen Report Categories matching Mongoose Model
   static const String catRoadStructural = 'ROAD_STRUCTURAL';

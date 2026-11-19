@@ -13,7 +13,8 @@ import {
   MediaAsset,
   MissionOutcome,
   Notification,
-  AuditLog
+  AuditLog,
+  Delivery
 } from '../../src/models/index.js';
 
 describe('AERON Database Models — Offline Schema & Validation Suite', () => {
@@ -637,6 +638,58 @@ describe('AERON Database Models — Offline Schema & Validation Suite', () => {
       const err = log.validateSync();
       expect(err).toBeDefined();
       expect(err?.errors.source).toBeDefined();
+    });
+  });
+
+  // ==========================================
+  // 14. DELIVERY MODEL
+  // ==========================================
+  describe('Delivery Model', () => {
+    it('validates a complete healthcare delivery document', () => {
+      const delivery = new Delivery({
+        deliveryId: 'DEL-HEALTH001',
+        recipientId: dummyObjectId(),
+        assignedDrone: dummyObjectId(),
+        assignedDroneId: 'AERON-PX4-BENCH01',
+        packageType: 'EMERGENCY_INSULIN',
+        priority: 'CRITICAL',
+        pickupLocation: {
+          name: 'City Medical Logistics Hub',
+          type: 'Point',
+          coordinates: [77.5946, 12.9716]
+        },
+        destinationLocation: {
+          address: '45 MG Road, Ward 7, Sector 3',
+          type: 'Point',
+          coordinates: [77.6033, 12.9752]
+        },
+        status: 'ASSIGNED'
+      });
+
+      const err = delivery.validateSync();
+      expect(err).toBeUndefined();
+    });
+
+    it('rejects delivery with invalid coordinates or missing recipient', () => {
+      const delivery = new Delivery({
+        deliveryId: 'DEL-INV-001',
+        packageType: 'BLOOD_PLASMA',
+        pickupLocation: {
+          type: 'Point',
+          coordinates: [200.0, 12.97]
+        },
+        destinationLocation: {
+          address: 'Test',
+          type: 'Point',
+          coordinates: [77.6, 95.0]
+        }
+      });
+
+      const err = delivery.validateSync();
+      expect(err).toBeDefined();
+      expect(err?.errors.recipientId).toBeDefined();
+      expect(err?.errors['pickupLocation.coordinates']).toBeDefined();
+      expect(err?.errors['destinationLocation.coordinates']).toBeDefined();
     });
   });
 });

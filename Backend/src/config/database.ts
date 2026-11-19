@@ -1,4 +1,12 @@
 import mongoose from 'mongoose';
+import dns from 'dns';
+
+// Ensure reliable SRV DNS resolution for MongoDB Atlas on Windows environments
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (_) {
+  // Ignore in restricted environments
+}
 import { env, sanitizeEnvString, auditMongoUriSafely } from './env.js';
 import { logger } from '../utils/logger.js';
 

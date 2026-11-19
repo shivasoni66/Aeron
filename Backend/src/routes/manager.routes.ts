@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuthentication, requireRole } from '../middleware/auth.middleware.js';
 import { ManagerController } from '../controllers/manager.controller.js';
+import { DeliveryController } from '../controllers/delivery.controller.js';
 
 const managerRouter = Router();
 
@@ -47,6 +48,13 @@ managerRouter.get('/drones/:droneId/telemetry/latest', ManagerController.getDron
 managerRouter.get('/citizen-reports', ManagerController.getCitizenReports);
 managerRouter.patch('/citizen-reports/:reportId', ManagerController.updateCitizenReport);
 
+// Healthcare Drone Delivery Operations (Manager & Admin Only)
+managerRouter.get('/deliveries', DeliveryController.getDeliveries);
+managerRouter.post('/deliveries', DeliveryController.createDelivery);
+managerRouter.get('/deliveries/:deliveryId', DeliveryController.getDeliveryById);
+managerRouter.patch('/deliveries/:deliveryId/assign-drone', DeliveryController.assignDrone);
+managerRouter.patch('/deliveries/:deliveryId/status', DeliveryController.updateDeliveryStatus);
+
 // Central Mission Control & Operating Mode
 managerRouter.get('/mission-control/state', ManagerController.getMissionControlState);
 managerRouter.post('/mission-control/mode', ManagerController.setOperatingMode);
@@ -62,4 +70,3 @@ managerRouter.get('/environmental/latest', ManagerController.getEnvironmentalLat
 managerRouter.get('/environmental/bhopal', ManagerController.getBhopalMicroClimate);
 
 export { managerRouter };
-

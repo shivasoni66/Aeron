@@ -7,32 +7,258 @@ import 'package:userapp/models/notification_item.dart';
 import 'package:userapp/models/achievement_badge.dart';
 import 'package:userapp/models/auth_user.dart';
 import 'package:userapp/services/location_service.dart';
+import 'package:userapp/services/auth_service.dart';
+import 'package:userapp/services/citizen_api_service.dart';
+import 'package:userapp/services/delivery_tracking_service.dart';
+import 'package:userapp/services/secure_storage_service.dart';
+import 'package:userapp/screens/delivery_tracking_screen.dart';
 import 'package:userapp/screens/explore_screen.dart';
+import 'package:userapp/screens/home_screen.dart';
 import 'package:userapp/screens/my_reports_screen.dart';
 import 'package:userapp/screens/profile_screen.dart';
 import 'package:userapp/screens/auth/login_screen.dart';
 import 'package:userapp/screens/auth/register_screen.dart';
 
+// Test Fakes
+class _FakeAuthService extends ChangeNotifier implements CitizenAuthService {
+  bool authenticated;
+  _FakeAuthService({this.authenticated = true});
+
+  @override
+  bool get isAuthenticated => authenticated;
+
+  @override
+  CitizenAuthUser? get currentUser => authenticated
+      ? const CitizenAuthUser(
+          id: 'cit-01',
+          name: 'Demo Citizen',
+          email: 'citizen.demo@aeron.gov',
+          role: 'citizen',
+          accountStatus: 'active',
+        )
+      : null;
+
+  @override
+  bool get isLoading => false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeStorageService implements SecureStorageService {
+  String? token = 'mock-jwt-token';
+  _FakeStorageService();
+
+  @override
+  Future<String?> getAccessToken() async => token;
+
+  @override
+  Future<String?> getRefreshToken() async => 'mock-refresh-token';
+
+  @override
+  Future<void> saveTokens({required String accessToken, String? refreshToken}) async {
+    token = accessToken;
+  }
+
+  @override
+  Future<void> clearAll() async {
+    token = null;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeCitizenApiService implements CitizenApiService {
+  Map<String, dynamic>? activeDeliveryResponse;
+
+  _FakeCitizenApiService({this.activeDeliveryResponse});
+
+  @override
+  Future<Map<String, dynamic>?> getActiveDelivery() async => activeDeliveryResponse;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+Map<String, dynamic> _buildSampleDeliveryJson({
+  String deliveryId = 'DEL-6P1SNZ',
+  String status = 'ASSIGNED',
+  String packageType = 'ANTIVENOM',
+  double droneLat = 12.9716,
+  double droneLng = 77.5946,
+}) {
+  return {
+    '_id': 'mongo-del-001',
+    'deliveryId': deliveryId,
+    'status': status,
+    'packageType': packageType,
+    'pickupLocation': {
+      'name': 'AERON Central Medical Depot',
+      'address': 'Bangalore City Hub',
+      'latitude': 12.9716,
+      'longitude': 77.5946,
+    },
+    'destinationLocation': {
+      'name': 'Bhopal Health Center, Sector 4',
+      'address': 'Bhopal Hospital',
+      'latitude': 23.2650,
+      'longitude': 77.4200,
+    },
+    'assignedDrone': {
+      '_id': 'drone-mongo-001',
+      'droneId': 'DRONE-SIM-01',
+      'status': 'ASSIGNED',
+    },
+    'telemetry': {
+      'latitude': droneLat,
+      'longitude': droneLng,
+      'altitude': 15.0,
+      'groundSpeed': 0.0,
+      'heading': 90.0,
+      'recordedAt': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
+      'freshness': 'stale',
+      'isLivePosition': false,
+    },
+  };
+}
+
 void main() {
   group('AERON Citizen Services — Mobile App Widget & Unit Test Suite', () {
-    testWidgets('App launch and initial header rendering', (WidgetTester tester) async {
+    testWidgets('App launch and initial home screen rendering', (WidgetTester tester) async {
       await tester.pumpWidget(const AeronCitizenApp());
       await tester.pump();
 
       expect(find.text('AERON'), findsOneWidget);
-      expect(find.text('SEC-NORM'), findsOneWidget);
-      expect(find.text('1,280 PTS'), findsOneWidget);
+      expect(find.text('Track Your Drone'), findsOneWidget);
+      expect(find.text('Your delivery. Your drone. Live tracking.'), findsOneWidget);
+      expect(find.text('TRACK YOUR DRONE'), findsOneWidget);
     });
 
-    testWidgets('Five-tab bottom navigation dock is present', (WidgetTester tester) async {
+    testWidgets('Unauthenticated citizen tapping CTA is redirected to LoginScreen', (WidgetTester tester) async {
       await tester.pumpWidget(const AeronCitizenApp());
       await tester.pump();
 
-      expect(find.text('Home'), findsOneWidget);
-      expect(find.text('Explore'), findsOneWidget);
-      expect(find.text('Reports'), findsOneWidget);
-      expect(find.text('Profile'), findsOneWidget);
-      expect(find.byIcon(Icons.add_alert_rounded), findsOneWidget); // Center report button
+      final cta = find.byKey(const ValueKey('trackYourDroneCta'));
+      expect(cta, findsOneWidget);
+      await tester.tap(cta);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // Expect login screen transition
+      expect(find.byType(LoginScreen), findsOneWidget);
+    });
+
+    testWidgets('Authenticated citizen with active delivery renders delivery card and navigates to tracking screen', (WidgetTester tester) async {
+      final fakeAuth = _FakeAuthService(authenticated: true);
+      final fakeStorage = _FakeStorageService();
+      final fakeApi = _FakeCitizenApiService(activeDeliveryResponse: _buildSampleDeliveryJson());
+
+      final service = HealthcareDeliveryTrackingService(
+        storage: fakeStorage,
+        apiService: fakeApi,
+        enableSocket: false,
+      );
+      addTearDown(() => service.dispose());
+      await service.refreshNow();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(
+            authService: fakeAuth,
+            trackingService: service,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Active delivery preview card
+      expect(find.text('DEL-6P1SNZ'), findsOneWidget);
+      expect(find.text('DRONE ASSIGNED'), findsOneWidget);
+      expect(find.text('Antivenom'), findsOneWidget);
+      expect(find.text('Drone: DRONE-SIM-01'), findsOneWidget);
+
+      // Tap CTA
+      final cta = find.byKey(const ValueKey('trackYourDroneCta'));
+      await tester.tap(cta);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // Pushed to DeliveryTrackingScreen
+      expect(find.byType(DeliveryTrackingScreen), findsOneWidget);
+      expect(find.text('DEL-6P1SNZ'), findsWidgets);
+    });
+
+    testWidgets('Authenticated citizen with no active delivery shows No drone assigned yet notice', (WidgetTester tester) async {
+      final fakeAuth = _FakeAuthService(authenticated: true);
+      final fakeStorage = _FakeStorageService();
+      final fakeApi = _FakeCitizenApiService(activeDeliveryResponse: null);
+
+      final service = HealthcareDeliveryTrackingService(
+        storage: fakeStorage,
+        apiService: fakeApi,
+        enableSocket: false,
+      );
+      addTearDown(() => service.dispose());
+      await service.refreshNow();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(
+            authService: fakeAuth,
+            trackingService: service,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Initially no notice card
+      expect(find.byKey(const ValueKey('noDroneAssignedFeedback')), findsNothing);
+
+      // Tap CTA
+      final cta = find.byKey(const ValueKey('trackYourDroneCta'));
+      await tester.tap(cta);
+      await tester.pump();
+
+      // Notice card and text appears
+      expect(find.byKey(const ValueKey('noDroneAssignedFeedback')), findsOneWidget);
+      expect(find.text('No drone assigned yet'), findsOneWidget);
+      expect(find.textContaining('There is currently no healthcare drone assigned'), findsOneWidget);
+    });
+
+    testWidgets('Moto G34 360dp width layout overflow verification', (WidgetTester tester) async {
+      // Set logical resolution to 360 x 800 dp (Moto G34)
+      tester.view.physicalSize = const Size(720, 1600);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeStorage = _FakeStorageService();
+      final fakeApi = _FakeCitizenApiService(activeDeliveryResponse: _buildSampleDeliveryJson());
+      final service = HealthcareDeliveryTrackingService(
+        storage: fakeStorage,
+        apiService: fakeApi,
+        enableSocket: false,
+      );
+      addTearDown(() => service.dispose());
+      await service.refreshNow();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DeliveryTrackingScreen(
+            deliveryId: 'DEL-6P1SNZ',
+            trackingService: service,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Verify no RenderFlex exception was thrown on 360dp screen
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('distanceText')), findsOneWidget);
+      expect(find.textContaining('to destination'), findsOneWidget);
     });
 
     testWidgets('Explore screen renders title and search bar', (WidgetTester tester) async {

@@ -22,7 +22,7 @@ export const corsMiddleware = cors({
 
     if (env.isDevelopment) {
       // Allow localhost ports in development
-      if (/^http:\/\/localhost(:\d+)?$/.test(origin)) {
+      if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
         return callback(null, true);
       }
     }

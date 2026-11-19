@@ -285,5 +285,59 @@ class CitizenApiService {
       throw Exception('Failed to update profile');
     }
   }
+
+  /// Get active healthcare delivery for authenticated citizen.
+  Future<Map<String, dynamic>?> getActiveDelivery() async {
+    final uri = Uri.parse('${AppConstants.apiBaseUrl}/citizen/deliveries/active');
+    final response = await _sendWithAuthRetry((headers) => http.get(uri, headers: headers));
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = json['data'] as Map<String, dynamic>? ?? {};
+      return data['delivery'] as Map<String, dynamic>?;
+    } else {
+      final json = jsonDecode(response.body) as Map<String, dynamic>? ?? {};
+      throw Exception(json['message'] ?? 'Failed to fetch active delivery (${response.statusCode})');
+    }
+  }
+
+  /// Get healthcare delivery detail by delivery ID for authenticated citizen.
+  Future<Map<String, dynamic>> getDeliveryById(String deliveryId) async {
+    final uri = Uri.parse('${AppConstants.apiBaseUrl}/citizen/deliveries/$deliveryId');
+    final response = await _sendWithAuthRetry((headers) => http.get(uri, headers: headers));
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = json['data'] as Map<String, dynamic>;
+      return data['delivery'] as Map<String, dynamic>;
+    } else {
+      final json = jsonDecode(response.body) as Map<String, dynamic>? ?? {};
+      throw Exception(json['message'] ?? 'Failed to fetch delivery details (${response.statusCode})');
+    }
+  }
+
+  /// List healthcare deliveries for authenticated citizen.
+  Future<Map<String, dynamic>> getMyDeliveries({
+    int page = 1,
+    int limit = 15,
+    String? status,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (status != null && status.isNotEmpty) 'status': status,
+    };
+
+    final uri = Uri.parse('${AppConstants.apiBaseUrl}/citizen/deliveries').replace(queryParameters: queryParams);
+    final response = await _sendWithAuthRetry((headers) => http.get(uri, headers: headers));
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return json['data'] as Map<String, dynamic>;
+    } else {
+      final json = jsonDecode(response.body) as Map<String, dynamic>? ?? {};
+      throw Exception(json['message'] ?? 'Failed to fetch deliveries (${response.statusCode})');
+    }
+  }
 }
 

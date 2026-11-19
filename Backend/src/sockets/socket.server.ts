@@ -7,6 +7,7 @@ import { User, UserRole, AccountStatus } from '../models/User.js';
 import { Drone } from '../models/Drone.js';
 import mongoose from 'mongoose';
 import { recordAuthAudit } from '../utils/audit.js';
+import { authorizeDeliveryRoom, broadcastDeliveryTelemetry } from '../services/delivery-telemetry.service.js';
 
 export interface AuthenticatedSocketUser {
   id: string;
@@ -282,10 +283,65 @@ export const initSocketServer = (httpServer: HttpServer): SocketIOServer => {
         }
       }
 
+      // Citizen Private Delivery Tracking Rooms (Phase 3)
+      if (room.startsWith('citizen:delivery:')) {
+        const authResult = await authorizeDeliveryRoom(user, room);
+        if (!authResult.authorized) {
+          sendResponse(false, authResult.error);
+          return;
+        }
+        const canonicalRoom = authResult.canonicalRoom || room;
+        socket.join(canonicalRoom);
+        logger.info(`[Socket.IO] ${user.email} (${user.role}) joined authorized delivery room: ${canonicalRoom}`);
+        sendResponse(true);
+        return;
+      }
+
       // Join authorized room
       socket.join(room);
       logger.info(`[Socket.IO] ${user.email} (${user.role}) joined authorized room: ${room}`);
       sendResponse(true);
+    });
+
+    // Dedicated Healthcare Delivery Socket Subscription (Phase 3)
+    socket.on('delivery:subscribe', async (data: { deliveryId: string }, callback) => {
+      const deliveryId = data?.deliveryId?.trim();
+      const sendSubResponse = (success: boolean, error?: string, room?: string) => {
+        if (typeof callback === 'function') {
+          callback({ success, error, room });
+        } else {
+          socket.emit(success ? 'delivery:subscribed' : 'delivery:subscribe_error', { room, error });
+        }
+      };
+
+      if (!deliveryId) {
+        sendSubResponse(false, 'Delivery identifier is required');
+        return;
+      }
+
+      const authResult = await authorizeDeliveryRoom(user, deliveryId);
+      if (!authResult.authorized) {
+        sendSubResponse(false, authResult.error);
+        return;
+      }
+
+      const canonicalRoom = authResult.canonicalRoom!;
+      socket.join(canonicalRoom);
+      logger.info(`[Socket.IO] ${user.email} (${user.role}) subscribed to delivery: ${canonicalRoom}`);
+      sendSubResponse(true, undefined, canonicalRoom);
+    });
+
+    socket.on('delivery:unsubscribe', (data: { deliveryId: string }, callback) => {
+      const deliveryId = data?.deliveryId?.trim();
+      if (deliveryId) {
+        const canonical = deliveryId.startsWith('citizen:delivery:')
+          ? deliveryId
+          : `citizen:delivery:${deliveryId.toUpperCase()}`;
+        socket.leave(canonical);
+      }
+      if (typeof callback === 'function') {
+        callback({ success: true });
+      }
     });
 
     socket.on('disconnect', (reason) => {

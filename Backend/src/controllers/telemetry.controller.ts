@@ -5,6 +5,7 @@ import { TelemetryRecord } from '../models/TelemetryRecord.js';
 import { Drone } from '../models/Drone.js';
 import { getSocketServer } from '../sockets/socket.server.js';
 import { logger } from '../utils/logger.js';
+import { broadcastDeliveryTelemetry } from '../services/delivery-telemetry.service.js';
 
 export class TelemetryController {
   /**
@@ -211,6 +212,12 @@ export class TelemetryController {
               transport: item.transport,
               recordedAt: item.recordedAt.toISOString()
             });
+          }
+
+          // Scoped Healthcare Delivery Broadcast (Phase 3)
+          const droneObjId = droneCache.get(item.droneId);
+          if (droneObjId) {
+            await broadcastDeliveryTelemetry(io, droneObjId, item.droneId, item);
           }
         }
       } catch (socketErr) {

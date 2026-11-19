@@ -1,10 +1,16 @@
 import { Router } from 'express';
-import { requireAuthentication, requireRole } from '../middleware/auth.middleware.js';
+import { requireAuthentication, optionalAuthentication, requireRole } from '../middleware/auth.middleware.js';
 import { citizenController } from '../controllers/citizen.controller.js';
 
 const citizenRouter = Router();
 
-// Protect all citizen endpoints with authentication & role check
+// Healthcare Drone Delivery Tracking (Public / Citizen Self-Service)
+// Uses optionalAuthentication so authenticated citizens get their personalized delivery,
+// while guests/anonymous users can immediately view the live active drone tracking without login barriers.
+citizenRouter.get('/deliveries/active', optionalAuthentication, citizenController.getActiveDelivery);
+citizenRouter.get('/deliveries/:deliveryId', optionalAuthentication, citizenController.getDeliveryById);
+
+// Protect all remaining citizen endpoints with authentication & role check
 // Default policy: Citizen permitted. Manager denied. Admin denied from citizen-only operations unless a separately authorized policy explicitly permits them.
 citizenRouter.use(requireAuthentication);
 citizenRouter.use((req, res, next) => {
@@ -20,6 +26,8 @@ citizenRouter.use((req, res, next) => {
     message: `Access denied. Citizen-only operations require citizen role. Current role: '${req.user?.role}'`
   });
 });
+
+citizenRouter.get('/deliveries', citizenController.getMyDeliveries);
 
 // Civic Reports
 citizenRouter.post('/reports', citizenController.createReport);
@@ -42,4 +50,3 @@ citizenRouter.get('/achievements', citizenController.getAchievements);
 citizenRouter.post('/media/upload', citizenController.uploadEvidence);
 
 export { citizenRouter };
-
