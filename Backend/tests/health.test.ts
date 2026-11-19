@@ -5,11 +5,23 @@ import { createApp } from '../src/app.js';
 describe('AERON Backend — Health & Infrastructure Endpoints', () => {
   const app = createApp();
 
+  it('GET / should return 200 with root API information', async () => {
+    const res = await request(app).get('/');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('application', 'AERON');
+    expect(res.body).toHaveProperty('status', 'online');
+    expect(res.body).toHaveProperty('health', '/api/v1/health');
+    expect(res.body).toHaveProperty('api', '/api/v1');
+  });
+
   it('GET /health should return 200 with service health metadata', async () => {
     const res = await request(app).get('/health');
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('status', 'healthy');
+    expect(res.body).toHaveProperty('application', 'AERON');
+    expect(res.body).toHaveProperty('database');
     expect(res.body).toHaveProperty('service', 'aeron-backend');
     expect(res.body).toHaveProperty('version', '1.0.0');
     expect(res.body).toHaveProperty('uptimeSeconds');
@@ -57,6 +69,9 @@ describe('AERON Backend — Health & Infrastructure Endpoints', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('healthy');
+    expect(res.body).toHaveProperty('application', 'AERON');
+    expect(res.body).toHaveProperty('database');
+    expect(res.body).toHaveProperty('uptimeSeconds');
   });
 
   it('GET /non-existent-route should return 404 with structured error', async () => {

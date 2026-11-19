@@ -13,6 +13,7 @@ class CameraFrame:
     width: Optional[int] = None
     height: Optional[int] = None
     size_bytes: int = 0
+    source: str = "REAL"
     telemetry_lat: Optional[float] = None
     telemetry_lon: Optional[float] = None
     telemetry_alt: Optional[float] = None
@@ -20,19 +21,25 @@ class CameraFrame:
     telemetry_age_seconds: Optional[float] = None
 
     def to_backend_dict(self) -> Dict[str, Any]:
-        """Serializes the frame into the camelCase JSON format expected by AERON backend."""
+        """Serializes the frame into the exact schema expected by AERON backend."""
         d = {
-            "droneId": self.drone_id,
-            "deviceId": self.device_id,
+            "cameraId": self.device_id.upper(),
+            "droneId": self.drone_id.upper(),
             "capturedAt": self.captured_at,
+            "source": self.source,
+            "contentType": "image/jpeg",
+            "frameWidth": self.width or 320,
+            "frameHeight": self.height or 240,
+            "frameSizeBytes": self.size_bytes,
+            "frameData": self.frame_base64,
+            # Legacy and frontend alias mappings
+            "deviceId": self.device_id,
             "frameBase64": self.frame_base64,
             "mimeType": self.mime_type,
-            "sizeBytes": self.size_bytes
+            "sizeBytes": self.size_bytes,
+            "width": self.width or 320,
+            "height": self.height or 240
         }
-        if self.width is not None:
-            d["width"] = self.width
-        if self.height is not None:
-            d["height"] = self.height
         if self.telemetry_lat is not None:
             d["telemetryLat"] = self.telemetry_lat
         if self.telemetry_lon is not None:
@@ -60,11 +67,32 @@ class CameraStatus:
     ip_address: Optional[str] = None
     error_message: Optional[str] = None
     recorded_at: Optional[str] = None
+    source: str = "REAL"
 
     def to_backend_dict(self) -> Dict[str, Any]:
         """Serializes camera health into the camelCase JSON format expected by AERON backend."""
+        if self.streaming:
+            conn_status = "STREAMING"
+            stream_status = "STREAMING"
+        elif self.reachable:
+            conn_status = "CONNECTED"
+            stream_status = "STANDBY"
+        elif self.installed:
+            conn_status = "DISCONNECTED"
+            stream_status = "OFFLINE"
+        else:
+            conn_status = "NOT_INSTALLED"
+            stream_status = "OFFLINE"
+
         d = {
-            "droneId": self.drone_id,
+            "cameraId": self.device_id.upper(),
+            "droneId": self.drone_id.upper(),
+            "connectionStatus": conn_status,
+            "streamStatus": stream_status,
+            "source": self.source,
+            "resolution": self.resolution or "320x240",
+            "frameRate": max(0.0, min(60.0, round(self.fps, 2))),
+            # Legacy fields for direct consumer compatibility
             "deviceId": self.device_id,
             "installed": self.installed,
             "reachable": self.reachable,
@@ -74,13 +102,11 @@ class CameraStatus:
         }
         if self.last_frame_at:
             d["lastFrameAt"] = self.last_frame_at
-        if self.resolution:
-            d["resolution"] = self.resolution
         if self.rssi is not None:
             d["rssi"] = self.rssi
         if self.ip_address:
             d["ipAddress"] = self.ip_address
         if self.error_message:
+            d["errorCode"] = self.error_message
             d["errorMessage"] = self.error_message
         return d
-

@@ -55,8 +55,8 @@ export const getCsrfToken = (): string | null => {
 import { API_BASE_URL } from './api';
 
 export const loginManager = async (email: string, password: string): Promise<AuthResponse> => {
-  try {
-    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+  const tryLogin = async (baseUrl: string): Promise<Response> => {
+    return fetch(`${baseUrl}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -64,6 +64,25 @@ export const loginManager = async (email: string, password: string): Promise<Aut
       credentials: 'include',
       body: JSON.stringify({ email, password, clientType: 'WEB' })
     });
+  };
+
+  try {
+    let res: Response;
+    try {
+      res = await tryLogin(API_BASE_URL);
+      if (!res.ok && (res.status === 404 || res.status >= 502) && API_BASE_URL.includes('onrender.com') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+        try {
+          const localRes = await tryLogin('http://localhost:5000/api/v1');
+          if (localRes.ok) res = localRes;
+        } catch {}
+      }
+    } catch (err) {
+      if (API_BASE_URL.includes('onrender.com') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+        res = await tryLogin('http://localhost:5000/api/v1');
+      } else {
+        throw err;
+      }
+    }
 
     const data: AuthResponse = await res.json().catch(() => ({
       status: 'error',
@@ -96,7 +115,7 @@ export const refreshSession = async (): Promise<AuthResponse> => {
   }
 
   inFlightRefreshPromise = (async () => {
-    try {
+    const tryRefresh = async (baseUrl: string): Promise<Response> => {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       };
@@ -104,11 +123,30 @@ export const refreshSession = async (): Promise<AuthResponse> => {
         headers['X-CSRF-Token'] = currentCsrfToken;
       }
 
-      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      return fetch(`${baseUrl}/auth/refresh`, {
         method: 'POST',
         headers,
         credentials: 'include'
       });
+    };
+
+    try {
+      let res: Response;
+      try {
+        res = await tryRefresh(API_BASE_URL);
+        if (!res.ok && (res.status === 404 || res.status >= 502) && API_BASE_URL.includes('onrender.com') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+          try {
+            const localRes = await tryRefresh('http://localhost:5000/api/v1');
+            if (localRes.ok) res = localRes;
+          } catch {}
+        }
+      } catch (err) {
+        if (API_BASE_URL.includes('onrender.com') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+          res = await tryRefresh('http://localhost:5000/api/v1');
+        } else {
+          throw err;
+        }
+      }
 
       const data: AuthResponse = await res.json().catch(() => ({
         status: 'error',

@@ -141,7 +141,23 @@ export interface TelemetryPoint {
   relativeAltitude?: number;
   groundSpeed?: number;
   heading?: number;
+  roll?: number;
+  pitch?: number;
+  yaw?: number;
+  climbRate?: number;
+  batteryVoltage?: number;
+  batteryCurrent?: number;
+  batteryPercentage?: number | null;
+  batteryCellVoltage?: number | null;
+  batteryRemainingMah?: number | null;
+  gpsFixType?: string;
+  satellites?: number;
+  hdop?: number;
+  flightMode?: string;
+  armed?: boolean;
+  connectionStatus?: string;
   recordedAt: string;
+  receivedAt?: string;
   source?: string;
   isSimulated?: boolean;
 }
@@ -240,4 +256,239 @@ export interface CitizenReportData {
   earnedPoints: number;
   submittedAt: string;
   reviewedAt?: string;
+}
+
+export type OperatingMode = 'STANDARD' | 'MEGA_MISSION';
+export type PipelineHealth = 'HEALTHY' | 'DEGRADED' | 'FAILED' | 'STOPPED' | 'UNAVAILABLE';
+
+export interface PipelineState {
+  missionId?: string;
+  status: 'IDLE' | 'ACTIVE' | 'PAUSED' | 'STOPPED';
+  pipelineHealth: PipelineHealth;
+  lastInferenceAt?: string;
+  details?: string;
+  modelName?: string;
+}
+
+export interface EnvironmentalServiceState {
+  status: 'ONLINE' | 'OFFLINE' | 'STALE' | 'NOT_CONNECTED';
+  lastReadingAt?: string;
+  sensorCount?: number;
+  details?: string;
+}
+
+export interface MissionSessionData {
+  _id?: string;
+  sessionId: string;
+  operatingMode: OperatingMode;
+  status: 'IDLE' | 'ACTIVE' | 'PAUSED' | 'COMPLETED';
+  activeMissionId?: string | null;
+  activeMissionType?: MissionType | null;
+  sessionStartedAt?: string | null;
+  sessionEndedAt?: string | null;
+  childSessions: {
+    civic: PipelineState;
+    crowd: PipelineState;
+    sar: PipelineState;
+  };
+  environmentalService: EnvironmentalServiceState;
+}
+
+export interface ObservationData {
+  _id: string;
+  observationId: string;
+  missionId: string;
+  sessionId?: string;
+  missionType: MissionType;
+  droneId: string;
+  category: string;
+  confidence: number;
+  detectedAt: string;
+  evidenceImageUrl: string;
+  cropImageUrl?: string;
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  dronePosition: {
+    latitude: number;
+    longitude: number;
+    altitude?: number;
+    heading?: number;
+  };
+  estimatedTargetPosition?: {
+    latitude: number;
+    longitude: number;
+  } | null;
+  locationAccuracyStatus: 'EXACT' | 'ESTIMATED' | 'APPROXIMATE' | 'UNAVAILABLE';
+  gpsQuality?: {
+    fixType?: string;
+    satellites?: number;
+    hdop?: number;
+  };
+  telemetryTimeDiffMs?: number;
+  metrics?: Record<string, any>;
+  modelInfo: {
+    name: string;
+    version: string;
+    framework?: string;
+  };
+  verificationStatus: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  reviewedBy?: UserSummary;
+  reviewedAt?: string;
+  reviewNotes?: string;
+  metadata?: Record<string, any>;
+}
+
+// Bhopal Micro-Climate & Atmospheric Types
+export interface LocationMetadata {
+  city: string;
+  state: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  elevationMeters?: number;
+  timezone: string;
+  localTime: string;
+}
+
+export interface CurrentWeather {
+  temperature: number;
+  apparentTemperature: number;
+  relativeHumidity: number;
+  pressureMsl: number;
+  surfacePressure?: number;
+  windSpeed: number;
+  windDirection: number;
+  windGusts: number;
+  precipitation: number;
+  rain: number;
+  showers: number;
+  cloudCover: number;
+  weatherCode: number;
+  weatherDescription: string;
+  isDay: boolean;
+  timestamp: string;
+}
+
+export interface CurrentAirQuality {
+  usAqi: number;
+  europeanAqi: number;
+  pm25: number;
+  pm10: number;
+  carbonMonoxide: number;
+  nitrogenDioxide: number;
+  sulphurDioxide: number;
+  ozone: number;
+  dust: number;
+  uvIndex: number;
+  timestamp: string;
+}
+
+export interface HourlyWeatherForecast {
+  time: string;
+  temperature: number;
+  relativeHumidity: number;
+  precipitationProbability: number;
+  precipitation: number;
+  weatherCode: number;
+  weatherDescription: string;
+  windSpeed: number;
+  windDirection: number;
+  uvIndex: number;
+}
+
+export interface DailyWeatherForecast {
+  date: string;
+  weatherCode: number;
+  weatherDescription: string;
+  tempMax: number;
+  tempMin: number;
+  precipitationSum: number;
+  precipitationProbabilityMax: number;
+  sunrise: string;
+  sunset: string;
+}
+
+export interface HourlyAirQualityForecast {
+  time: string;
+  usAqi: number;
+  europeanAqi: number;
+  pm25: number;
+  pm10: number;
+  carbonMonoxide: number;
+  nitrogenDioxide: number;
+  sulphurDioxide: number;
+  ozone: number;
+  dust: number;
+  uvIndex: number;
+}
+
+export interface HardwareSensorState {
+  status: 'SENSOR_NOT_CONNECTED' | 'SENSOR_CONNECTED' | 'SENSOR_STALE';
+  droneId: string | null;
+  lastReadingAt: string | null;
+  readings: {
+    temperature?: number;
+    humidity?: number;
+    pressure?: number;
+  } | null;
+  source: 'AIRFRAME_BMP280_I2C' | 'NONE';
+  notes: string;
+}
+
+export interface EnvironmentalSources {
+  weather: {
+    provider: string;
+    model: string;
+    license: string;
+    attribution: string;
+    url: string;
+  };
+  airQuality: {
+    provider: string;
+    model: string;
+    domain: string;
+    spatialResolution: string;
+    temporalResolution: string;
+    license: string;
+    attribution: string;
+    url: string;
+  };
+}
+
+export interface EnvironmentalStatusSummary {
+  flightAdvisory: 'PERMITTED' | 'CAUTION' | 'RESTRICTED';
+  advisoryReasons: string[];
+  thermalClassification: string;
+  airQualityClassification: string;
+  particulateAlert: boolean;
+  windAlert: boolean;
+  rainAlert: boolean;
+}
+
+export interface BhopalMicroClimateData {
+  location: LocationMetadata;
+  weather: CurrentWeather;
+  airQuality: CurrentAirQuality;
+  forecast: {
+    hourly: HourlyWeatherForecast[];
+    daily: DailyWeatherForecast[];
+    airQualityHourly: HourlyAirQualityForecast[];
+  };
+  sources: EnvironmentalSources;
+  hardwareSensors: HardwareSensorState;
+  status: 'API_CONNECTED' | 'API_LOADING' | 'API_DELAYED' | 'API_STALE' | 'API_OFFLINE' | 'API_ERROR';
+  summary: EnvironmentalStatusSummary;
+  lastFetchedAt: string;
+  cache: {
+    weatherCached: boolean;
+    airQualityCached: boolean;
+    weatherAgeSeconds: number;
+    airQualityAgeSeconds: number;
+    weatherExpiresInSeconds: number;
+    airQualityExpiresInSeconds: number;
+  };
 }

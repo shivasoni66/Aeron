@@ -58,6 +58,7 @@ class CameraHealthTracker:
 
         self.total_frames_captured += 1
         self.consecutive_errors = 0
+        self.installed = True
         self.reachable = True
         self.last_frame_epoch = now_epoch
         self.last_frame_iso = now_iso

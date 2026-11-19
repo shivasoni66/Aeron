@@ -15,7 +15,7 @@ const startServer = async () => {
   // Attempt database connection (graceful, non-fatal for scaffolding)
   await connectDatabase();
 
-  const server = httpServer.listen(env.PORT, () => {
+  const server = httpServer.listen(env.PORT, '0.0.0.0', () => {
     logger.info(`========================================================`);
     logger.info(`🚀 AERON BACKEND SERVER OPERATIONAL`);
     logger.info(`🌐 Environment : ${env.NODE_ENV}`);

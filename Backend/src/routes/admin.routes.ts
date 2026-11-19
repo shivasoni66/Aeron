@@ -12,10 +12,12 @@ adminRouter.use(requireAuthentication, requireRole('admin'));
 // Administrative user provisioning endpoint
 adminRouter.post('/users', AuthController.provisionUser);
 
-// Drone Intelligence & Telemetry Read Endpoints
+// Drone Intelligence & Telemetry Endpoints
 adminRouter.get('/overview', AdminController.getOverview);
 adminRouter.get('/drones', AdminController.listDrones);
+adminRouter.post('/drones', AdminController.registerDrone);
 adminRouter.get('/drones/:droneId', AdminController.getDrone);
+adminRouter.patch('/drones/:droneId', AdminController.updateDrone);
 adminRouter.get('/drones/:droneId/telemetry/latest', AdminController.getLatestTelemetry);
 adminRouter.get('/drones/:droneId/telemetry/history', AdminController.getTelemetryHistory);
 adminRouter.get('/drones/:droneId/hardware', AdminController.getDroneHardware);

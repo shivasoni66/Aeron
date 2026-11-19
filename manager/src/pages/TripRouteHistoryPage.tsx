@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchFlights, fetchFlight } from '../services/api';
+import { subscribeToManagerBroadcasts } from '../services/socket';
 import { FlightSessionData, TelemetryPoint } from '../types';
 import { TacticalMap } from '../components/TacticalMap';
 
@@ -16,7 +17,20 @@ export const TripRouteHistoryPage: React.FC = () => {
   const [telemetrySamples, setTelemetrySamples] = useState<TelemetryPoint[]>([]);
   const [isLoadingDetails, setIsLoadingDetails] = useState<boolean>(false);
 
-  const loadFlights = async (p = 1) => {
+  const inspectFlight = useCallback(async (flightSessionId: string) => {
+    setIsLoadingDetails(true);
+    try {
+      const res = await fetchFlight(flightSessionId);
+      setSelectedFlight(res.flight);
+      setTelemetrySamples(res.telemetrySamples || []);
+    } catch (err: unknown) {
+      console.warn(err);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  }, []);
+
+  const loadFlights = useCallback(async (p = 1) => {
     setIsLoading(true);
     try {
       const res = await fetchFlights({
@@ -37,24 +51,20 @@ export const TripRouteHistoryPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [sourceFilter, statusFilter, search, selectedFlight, inspectFlight]);
 
   useEffect(() => {
     loadFlights(1);
-  }, [sourceFilter, statusFilter]);
+  }, [loadFlights]);
 
-  const inspectFlight = async (flightSessionId: string) => {
-    setIsLoadingDetails(true);
-    try {
-      const res = await fetchFlight(flightSessionId);
-      setSelectedFlight(res.flight);
-      setTelemetrySamples(res.telemetrySamples || []);
-    } catch (err: unknown) {
-      console.warn(err);
-    } finally {
-      setIsLoadingDetails(false);
-    }
-  };
+  useEffect(() => {
+    const cleanup = subscribeToManagerBroadcasts({
+      onFlightCreated: () => loadFlights(pagination.page),
+      onFlightUpdated: () => loadFlights(pagination.page),
+      onReconnect: () => loadFlights(pagination.page)
+    });
+    return () => cleanup();
+  }, [loadFlights, pagination.page]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,7 +171,7 @@ export const TripRouteHistoryPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="text-primary-fixed font-bold">{selectedFlight.flightSessionId}</span>
                 <span className="text-outline">/</span>
-                <span className="text-on-surface font-semibold">{selectedFlight.droneId?.droneId || 'AERON-PX4-BENCH01'}</span>
+                <span className="text-on-surface font-semibold">{selectedFlight.droneId?.displayName || selectedFlight.droneId?.droneId || 'Fleet Airframe'}</span>
               </div>
               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                 selectedFlight.source === 'REAL'
@@ -179,7 +189,7 @@ export const TripRouteHistoryPage: React.FC = () => {
                 </div>
               ) : (
                 <TacticalMap
-                  center={routeCoordinates[0] || [48.1371, 11.5761]}
+                  center={routeCoordinates[0] || [12.9716, 77.5946]}
                   zoom={14}
                   markers={routeMarkers}
                   routeCoords={routeCoordinates}
@@ -207,7 +217,7 @@ export const TripRouteHistoryPage: React.FC = () => {
               <div className="space-y-2.5">
                 <div className="flex justify-between items-center py-1.5 border-b border-surface-variant/30">
                   <span className="text-outline">AIRFRAME ID</span>
-                  <span className="text-primary-fixed font-bold">{selectedFlight.droneId?.droneId || 'AERON-PX4-BENCH01'}</span>
+                  <span className="text-primary-fixed font-bold">{selectedFlight.droneId?.displayName || selectedFlight.droneId?.droneId || 'Fleet Airframe'}</span>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-surface-variant/30">
                   <span className="text-outline">ASSIGNED MISSION</span>
@@ -298,7 +308,7 @@ export const TripRouteHistoryPage: React.FC = () => {
                     {f.flightSessionId}
                   </td>
                   <td className="p-4 font-mono text-on-surface">
-                    {f.droneId?.droneId || 'AERON-PX4-BENCH01'}
+                    {f.droneId?.displayName || f.droneId?.droneId || 'Fleet Airframe'}
                   </td>
                   <td className="p-4 font-mono">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${

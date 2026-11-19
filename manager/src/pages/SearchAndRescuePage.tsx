@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchMissions, fetchIncidents } from '../services/api';
+import { subscribeToManagerBroadcasts } from '../services/socket';
 import { MissionData, IncidentData } from '../types';
 import { CreateMissionModal } from '../components/CreateMissionModal';
 
@@ -9,7 +10,7 @@ export const SearchAndRescuePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [mRes, iRes] = await Promise.all([
@@ -23,11 +24,21 @@ export const SearchAndRescuePage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
+
+  useEffect(() => {
+    const cleanup = subscribeToManagerBroadcasts({
+      onMissionCreated: () => loadData(),
+      onMissionUpdated: () => loadData(),
+      onIncidentUpdated: () => loadData(),
+      onReconnect: () => loadData()
+    });
+    return () => cleanup();
+  }, [loadData]);
 
   return (
     <div className="flex flex-col w-full px-6 py-6 space-y-6 max-w-[1680px] mx-auto text-text-primary">
@@ -142,7 +153,7 @@ export const SearchAndRescuePage: React.FC = () => {
 
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-text-muted text-[11px] font-mono">
-                    AIRFRAME: <strong className="text-text-primary">HEX-01</strong>
+                    AIRFRAME: <strong className="text-text-primary">{m.assignedDrones?.[0]?.displayName || m.assignedDrones?.[0]?.droneId || 'Unassigned'}</strong>
                   </span>
                 </div>
               </div>

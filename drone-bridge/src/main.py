@@ -75,33 +75,46 @@ def run_real_mavlink_loop(
     coordinator.on_attitude_callback = on_attitude_packet
     coordinator.start()
 
+    # Dedicated background worker thread for camera acquisition and relay
+    camera_worker_thread = None
+    if camera_reader and camera_client:
+        def _camera_worker():
+            last_status = 0.0
+            while not stop_event.is_set():
+                now = time.time()
+                try:
+                    with snapshot_lock:
+                        snap = latest_snapshot or aggregator.snapshot(transport=coordinator.get_transport_snapshot())
+                    telemetry_age = (now - aggregator.last_message_time) if aggregator.last_message_time else None
+                    frame = camera_reader.capture_frame(
+                        telemetry_lat=snap.get("latitude"),
+                        telemetry_lon=snap.get("longitude"),
+                        telemetry_alt=snap.get("altitude"),
+                        telemetry_heading=snap.get("heading"),
+                        telemetry_age_seconds=round(telemetry_age, 2) if telemetry_age is not None else None
+                    )
+                    if frame:
+                        camera_client.enqueue_frame(frame)
+                        camera_client.flush_frames()
+
+                    if (now - last_status) >= 3.0:
+                        camera_client.send_status(camera_reader.health.snapshot())
+                        last_status = now
+                except Exception as cam_err:
+                    logger.debug(f"[CAMERA-WORKER] Error: {cam_err}")
+
+                time.sleep(0.02)
+
+        camera_worker_thread = threading.Thread(target=_camera_worker, daemon=True, name="CameraWorker")
+        camera_worker_thread.start()
+        logger.info("[CAMERA] Dedicated optical acquisition and relay worker thread started.")
+
     # Main Sender Loop
     last_persist_time = 0.0
-    last_camera_status_time = 0.0
 
     try:
         while not stop_event.is_set():
             now = time.time()
-
-            # Camera frame acquisition and GPS synchronization
-            if camera_reader and camera_client:
-                with snapshot_lock:
-                    snap = latest_snapshot or aggregator.snapshot(transport=coordinator.get_transport_snapshot())
-                telemetry_age = (now - aggregator.last_message_time) if aggregator.last_message_time else None
-                frame = camera_reader.capture_frame(
-                    telemetry_lat=snap.get("latitude"),
-                    telemetry_lon=snap.get("longitude"),
-                    telemetry_alt=snap.get("altitude"),
-                    telemetry_heading=snap.get("heading"),
-                    telemetry_age_seconds=round(telemetry_age, 2) if telemetry_age is not None else None
-                )
-                if frame:
-                    camera_client.enqueue_frame(frame)
-                    camera_client.flush_frames()
-
-                if (now - last_camera_status_time) >= 3.0:
-                    camera_client.send_status(camera_reader.health.snapshot())
-                    last_camera_status_time = now
 
             # Periodic transmission of latest normalized telemetry to Backend
             if (now - last_persist_time) >= persist_interval_sec:
@@ -162,6 +175,13 @@ def run_real_mavlink_loop(
         logger.info("Stopping telemetry loop...")
     finally:
         stop_event.set()
+        if camera_worker_thread and camera_worker_thread.is_alive():
+            camera_worker_thread.join(timeout=1.5)
+        if camera_reader:
+            try:
+                camera_reader.stop()
+            except Exception:
+                pass
         coordinator.stop()
 
 def run_simulation_loop(
@@ -257,7 +277,7 @@ def main():
     parser.add_argument("--scenario", default="SLOW_ROUTE", choices=SCENARIOS, help="Predefined simulation scenario")
     parser.add_argument("--simulator-server-port", type=int, default=5050, help="Port for local simulation control HTTP API (default: 5050)")
     parser.add_argument("--camera", action="store_true", help="Enable ESP32-CAM video acquisition and relay")
-    parser.add_argument("--camera-protocol", default=camera_config.protocol, choices=["HTTP_JPEG", "HTTP_MJPEG", "MOCK"], help="Camera acquisition protocol")
+    parser.add_argument("--camera-protocol", default=camera_config.protocol, choices=["MJPEG", "HTTP_MJPEG", "HTTP_JPEG", "MOCK"], help="Camera acquisition protocol")
     parser.add_argument("--camera-host", default=camera_config.host, help="ESP32-CAM IP or hostname")
     parser.add_argument("--camera-port", type=int, default=camera_config.port, help="ESP32-CAM port")
     parser.add_argument("--camera-fps", type=float, default=camera_config.target_fps, help="Target camera frame rate (fps)")
@@ -335,6 +355,7 @@ def main():
             cam_health.record_reachability(False)
 
         camera_reader = ESP32CameraReader(config=cam_cfg, health=cam_health)
+        camera_reader.start()
         camera_client = CameraTransportClient(
             frames_url=cam_cfg.frames_endpoint,
             status_url=cam_cfg.status_endpoint,
@@ -347,10 +368,15 @@ def main():
     # Graceful shutdown handler
     def handle_shutdown(signum, frame):
         logger.info(f"Signal {signum} received. Closing bridge gracefully...")
-        if camera_reader and camera_client:
-            offline_status = camera_reader.health.snapshot()
-            offline_status.streaming = False
-            camera_client.send_status(offline_status)
+        if camera_reader:
+            try:
+                if camera_client:
+                    offline_status = camera_reader.health.snapshot()
+                    offline_status.streaming = False
+                    camera_client.send_status(offline_status)
+                camera_reader.stop()
+            except Exception as close_err:
+                logger.debug(f"Error stopping camera during shutdown: {close_err}")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, handle_shutdown)
@@ -369,7 +395,14 @@ def main():
             port=args.simulator_server_port,
             camera_reader=camera_reader
         )
-        run_simulation_loop(simulator, client, camera_reader, camera_client)
+        try:
+            run_simulation_loop(simulator, client, camera_reader, camera_client)
+        finally:
+            if camera_reader:
+                try:
+                    camera_reader.stop()
+                except Exception:
+                    pass
         return
 
     # Initialize dedicated high-frequency Socket.IO machine client
@@ -416,6 +449,11 @@ def main():
             socket_client=socket_client
         )
     finally:
+        if camera_reader:
+            try:
+                camera_reader.stop()
+            except Exception:
+                pass
         socket_client.disconnect()
 
 if __name__ == "__main__":

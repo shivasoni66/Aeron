@@ -193,14 +193,14 @@ export const BridgeControllerWidget: React.FC = () => {
     switch (status) {
       case 'CONNECTED':
         return {
-          label: 'CONNECTED',
+          label: 'TELEMETRY ACTIVE',
           badgeClass: 'bg-success/15 text-success border border-success/30',
           dotClass: 'bg-success animate-pulse shadow-[0_0_8px_#34D399]',
-          description: 'Valid MAVLink telemetry and heartbeat actively streaming'
+          description: 'Valid MAVLink telemetry and heartbeat actively streaming to backend'
         };
       case 'CONNECTING':
         return {
-          label: 'CONNECTING',
+          label: 'CONNECTING TRANSPORT',
           badgeClass: 'bg-warning/15 text-warning border border-warning/30',
           dotClass: 'bg-warning animate-ping',
           description: 'Establishing TCP connection on port 5760'
@@ -214,24 +214,26 @@ export const BridgeControllerWidget: React.FC = () => {
         };
       case 'STARTING':
         return {
-          label: 'STARTING',
+          label: 'STARTING BRIDGE',
           badgeClass: 'bg-info/15 text-info border border-info/30',
           dotClass: 'bg-info animate-spin',
           description: 'Initializing Python virtualenv and dependencies'
         };
       case 'STOPPING':
         return {
-          label: 'STOPPING',
+          label: 'STOPPING...',
           badgeClass: 'bg-text-muted/15 text-text-muted border border-border',
           dotClass: 'bg-text-muted animate-pulse',
           description: 'Terminating managed process tree'
         };
       case 'DISCONNECTED':
         return {
-          label: 'DISCONNECTED',
+          label: bridgeData.managed_pid ? 'BRIDGE RUNNING • WAITING FOR HARDWARE' : 'DISCONNECTED',
           badgeClass: 'bg-warning/15 text-warning border border-warning/30',
-          dotClass: 'bg-warning',
-          description: 'Process active, but MAVLink heartbeat lost (> 2.0s)'
+          dotClass: 'bg-warning animate-pulse',
+          description: bridgeData.managed_pid
+            ? 'Process active; waiting for Pixhawk MAVLink heartbeat'
+            : 'Process active, but MAVLink heartbeat lost (> 2.0s)'
         };
       case 'ERROR':
         return {
@@ -397,13 +399,18 @@ export const BridgeControllerWidget: React.FC = () => {
 
           <div className="text-[11px] text-text-muted flex items-center justify-between px-1">
             <span>Mode: <strong>Wi-Fi TCP (5760)</strong></span>
-            {bridgeData.managed_pid && (
-              <span className="font-mono text-[10px] text-text-secondary">PID: {bridgeData.managed_pid}</span>
-            )}
+            <div className="flex items-center gap-2">
+              {bridgeData.managed_pid && (
+                <span className="font-mono text-[10px] text-text-secondary">PID: {bridgeData.managed_pid}</span>
+              )}
+              <span className="font-mono text-[10px] text-accent-primary">
+                {formatUptime(bridgeData.uptime_seconds)}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Right Column: 4 Real-Time Indicator Panels */}
+        {/* Right Column: 4 Real-Time Multi-Stage Indicator Panels */}
         <div className="md:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           {/* 1. ESP32 Link State */}
           <div className="p-3 bg-surface-elevated rounded-lg border border-border/80 flex flex-col justify-between">
@@ -452,14 +459,29 @@ export const BridgeControllerWidget: React.FC = () => {
             </span>
           </div>
 
-          {/* 4. Connection Uptime */}
+          {/* 4. Cloud Ingestion */}
           <div className="p-3 bg-surface-elevated rounded-lg border border-border/80 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-bold text-text-muted tracking-wider">Bridge Uptime</span>
-            <div className="font-mono font-bold text-xs text-text-primary my-1">
-              {formatUptime(bridgeData.uptime_seconds)}
+            <span className="text-[10px] uppercase font-bold text-text-muted tracking-wider">Cloud Ingestion</span>
+            <div className="flex items-center gap-1.5 my-1">
+              <span className={`w-2 h-2 rounded-full ${
+                bridgeData.backend_state === 'CONNECTED'
+                  ? 'bg-success animate-pulse'
+                  : bridgeData.backend_state === 'CONNECTING'
+                  ? 'bg-warning animate-pulse'
+                  : bridgeData.backend_state === 'UPLOAD_ERROR'
+                  ? 'bg-danger'
+                  : 'bg-text-muted'
+              }`} />
+              <span className="font-mono font-bold text-xs text-text-primary">
+                {bridgeData.backend_delivered_count !== undefined && bridgeData.backend_delivered_count > 0
+                  ? `${bridgeData.backend_delivered_count} pkts`
+                  : (bridgeData.backend_state || 'STANDBY')}
+              </span>
             </div>
-            <span className="text-[10px] text-text-muted">
-              {isRunning ? 'Active session' : 'Standby'}
+            <span className="text-[10px] text-text-muted truncate">
+              {bridgeData.backend_delivered_count && bridgeData.backend_delivered_count > 0
+                ? 'Render / Mongo Atlas'
+                : 'Render Ingest'}
             </span>
           </div>
         </div>

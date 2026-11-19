@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getDatabaseStatus } from '../config/database.js';
+import { getDatabaseStatus, isDatabaseConnected } from '../config/database.js';
 import { env } from '../config/env.js';
 
 const APP_VERSION = '1.0.0';
@@ -7,14 +7,22 @@ const startTime = Date.now();
 
 export const getHealth = (req: Request, res: Response): void => {
   const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+  const db = getDatabaseStatus();
+  const dbConnected = isDatabaseConnected();
 
   res.status(200).json({
     status: 'healthy',
+    application: 'AERON',
+    name: 'AERON',
     service: 'aeron-backend',
     version: APP_VERSION,
     uptimeSeconds,
     timestamp: new Date().toISOString(),
-    environment: env.NODE_ENV
+    environment: env.NODE_ENV,
+    database: {
+      status: dbConnected ? 'connected' : (db.status === 'connected' ? 'degraded' : db.status),
+      connected: dbConnected
+    }
   });
 };
 

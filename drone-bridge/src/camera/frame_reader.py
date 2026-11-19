@@ -1,6 +1,7 @@
 import io
 import time
 import base64
+import threading
 from typing import Optional, Tuple
 from datetime import datetime, timezone
 import requests
@@ -16,7 +17,7 @@ logger = setup_logging("CAMERA-READER")
 class ESP32CameraReader:
     """
     Acquires, validates, and encodes frames from an ESP32-CAM video module.
-    Supports HTTP snapshot polling, fallback synthetic frames (MOCK), and rate limiting.
+    Supports continuous HTTP MJPEG streaming, HTTP snapshot polling, fallback synthetic frames (MOCK), and rate limiting.
     """
 
     def __init__(self, config: CameraConfig, health: CameraHealthTracker):
@@ -24,11 +25,50 @@ class ESP32CameraReader:
         self.health = health
         self.base_url = f"http://{config.host}:{config.port}"
         self.snapshot_url = f"{self.base_url}{config.snapshot_path}"
+        self.stream_url = f"{self.base_url}{config.stream_path}"
         self.last_capture_time: float = 0.0
         self.min_frame_interval: float = 1.0 / max(0.1, config.target_fps)
 
-        # Pre-initialize session for connection pooling
+        # Protocol normalization
+        proto = (config.protocol or "MJPEG").upper()
+        self.is_mjpeg = proto in ("MJPEG", "HTTP_MJPEG")
+        self.is_mock = proto in ("MOCK", "SIMULATION")
+
+        # Session with connection pooling
         self.session = requests.Session()
+
+        # Threading and bounded frame storage for MJPEG stream
+        self._frame_lock = threading.Lock()
+        self._latest_raw_frame: Optional[bytes] = None
+        self._latest_frame_time: float = 0.0
+        self._latest_width: int = 320
+        self._latest_height: int = 240
+        self._stop_event = threading.Event()
+        self._stream_thread: Optional[threading.Thread] = None
+
+    def start(self):
+        """Starts the background MJPEG stream reader thread if streaming protocol is configured."""
+        if self.is_mjpeg and not self.is_mock:
+            if self._stream_thread is None or not self._stream_thread.is_alive():
+                self._stop_event.clear()
+                self._stream_thread = threading.Thread(
+                    target=self._mjpeg_stream_loop,
+                    name="ESP32-MJPEG-Reader",
+                    daemon=True
+                )
+                self._stream_thread.start()
+                logger.info(f"ESP32-CAM MJPEG background stream reader thread started for {self.stream_url}.")
+
+    def stop(self):
+        """Stops the background MJPEG stream reader thread cleanly."""
+        self._stop_event.set()
+        try:
+            self.session.close()
+        except Exception:
+            pass
+        if self._stream_thread and self._stream_thread.is_alive():
+            self._stream_thread.join(timeout=2.0)
+        logger.info("ESP32-CAM stream reader stopped.")
 
     @staticmethod
     def validate_jpeg(data: bytes, max_bytes: int = 1048576) -> Tuple[bool, Optional[str]]:
@@ -49,12 +89,6 @@ class ESP32CameraReader:
         if data[0] != 0xFF or data[1] != 0xD8:
             return False, f"Invalid JPEG SOI header: 0x{data[0]:02x} 0x{data[1]:02x}"
 
-        # Check EOI: 0xFF, 0xD9 anywhere in last 32 bytes (some cameras append trailing null bytes or padding)
-        has_eoi = b"\xff\xd9" in data[-32:]
-        if not has_eoi:
-            # We allow relaxed check if PIL can parse it, but log warning
-            pass
-
         return True, None
 
     @staticmethod
@@ -65,6 +99,106 @@ class ESP32CameraReader:
                 return img.width, img.height
         except Exception:
             return None, None
+
+    def _mjpeg_stream_loop(self):
+        """
+        Continuous worker loop consuming the multipart MJPEG stream from ESP32-CAM.
+        Extracts individual JPEG frames delimited by SOI (0xFF, 0xD8) and EOI (0xFF, 0xD9).
+        Maintains bounded buffer and auto-reconnects on disconnection.
+        """
+        logger.info(f"MJPEG continuous consumer initiated: {self.stream_url}")
+        reconnect_delay = 1.0
+
+        while not self._stop_event.is_set():
+            try:
+                logger.info(f"Connecting to ESP32-CAM MJPEG stream at {self.stream_url}...")
+                with self.session.get(
+                    self.stream_url,
+                    stream=True,
+                    timeout=(self.config.timeout_seconds, 10.0),
+                    headers={"User-Agent": "AERON-GCS/1.0"}
+                ) as resp:
+                    if resp.status_code != 200:
+                        err = f"ESP32-CAM stream HTTP {resp.status_code} ({self.stream_url})"
+                        logger.warning(err)
+                        self.health.record_fetch_error(err)
+                        time.sleep(reconnect_delay)
+                        reconnect_delay = min(5.0, reconnect_delay * 1.5)
+                        continue
+
+                    logger.info(f"Successfully connected to ESP32-CAM MJPEG stream at {self.stream_url}!")
+                    reconnect_delay = 1.0
+                    self.health.record_reachability(True, ip=f"{self.config.host}:{self.config.port}")
+
+                    chunk_buffer = bytearray()
+                    # Bounded iteration chunk size
+                    for chunk in resp.iter_content(chunk_size=4096):
+                        if self._stop_event.is_set():
+                            break
+                        if not chunk:
+                            continue
+
+                        chunk_buffer.extend(chunk)
+
+                        # Extract all complete JPEG frames in buffer
+                        while True:
+                            soi = chunk_buffer.find(b"\xff\xd8")
+                            if soi == -1:
+                                if len(chunk_buffer) > 4:
+                                    chunk_buffer = chunk_buffer[-3:]
+                                break
+
+                            eoi = chunk_buffer.find(b"\xff\xd9", soi + 2)
+                            if eoi == -1:
+                                if soi > 0:
+                                    chunk_buffer = chunk_buffer[soi:]
+                                # Bounded buffer protection against runaway memory
+                                if len(chunk_buffer) > self.config.max_frame_bytes + 65536:
+                                    chunk_buffer = chunk_buffer[2:]
+                                break
+
+                            # Complete frame extracted
+                            jpeg_bytes = bytes(chunk_buffer[soi : eoi + 2])
+                            chunk_buffer = chunk_buffer[eoi + 2 :]
+
+                            valid, err = self.validate_jpeg(jpeg_bytes, max_bytes=self.config.max_frame_bytes)
+                            if valid:
+                                w, h = self.get_image_dimensions(jpeg_bytes)
+                                if not w or not h:
+                                    w, h = self._latest_width or 320, self._latest_height or 240
+
+                                now_epoch = time.time()
+                                with self._frame_lock:
+                                    self._latest_raw_frame = jpeg_bytes
+                                    self._latest_frame_time = now_epoch
+                                    self._latest_width = w
+                                    self._latest_height = h
+
+                                self.health.record_frame_success(width=w, height=h, size_bytes=len(jpeg_bytes))
+
+            except requests.exceptions.RequestException as exc:
+                err_msg = str(exc)
+                logger.warning(f"ESP32-CAM MJPEG stream disconnected: {err_msg}")
+                self.health.record_fetch_error(f"Stream error: {err_msg}")
+
+                # If connection timed out on port 81, check if browser is holding single client slot
+                if "timed out" in err_msg.lower() or "timeout" in err_msg.lower():
+                    logger.warning(
+                        "NOTE: If 'http://10.231.241.200:81/stream' is open in another browser tab, "
+                        "please close it to allow the AERON bridge to connect (ESP32-CAM serves 1 stream client)."
+                    )
+
+                with self._frame_lock:
+                    if time.time() - self._latest_frame_time > self.config.stale_timeout_seconds:
+                        self._latest_raw_frame = None
+
+                time.sleep(reconnect_delay)
+                reconnect_delay = min(5.0, reconnect_delay * 1.5)
+
+            except Exception as exc:
+                logger.error(f"Unexpected error in MJPEG stream loop: {exc}")
+                self.health.record_fetch_error(str(exc))
+                time.sleep(reconnect_delay)
 
     def generate_synthetic_frame(
         self,
@@ -78,7 +212,6 @@ class ESP32CameraReader:
         Used for bench validation when physical ESP32-CAM is not connected.
         """
         width, height = 640, 480
-        # Dark slate background with grid pattern
         img = Image.new("RGB", (width, height), color=(15, 23, 42))
         draw = ImageDraw.Draw(img)
 
@@ -95,7 +228,6 @@ class ESP32CameraReader:
         draw.line([(width - 40, 40), (width - 40 - box_size, 40)], fill=(14, 165, 233), width=2)
         draw.line([(width - 40, 40), (width - 40, 40 + box_size)], fill=(14, 165, 233), width=2)
 
-        # Telemetry / HUD text overlay
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         lat_str = f"{lat:.5f}" if lat is not None else "--.-----"
         lon_str = f"{lon:.5f}" if lon is not None else "--.-----"
@@ -129,44 +261,64 @@ class ESP32CameraReader:
             return None
 
         raw_bytes: Optional[bytes] = None
+        width: Optional[int] = None
+        height: Optional[int] = None
 
-        if self.config.protocol == "MOCK":
+        if self.is_mock:
             raw_bytes = self.generate_synthetic_frame(
                 drone_id=self.config.drone_id,
                 lat=telemetry_lat,
                 lon=telemetry_lon,
                 alt=telemetry_alt
             )
+            width, height = 640, 480
+        elif self.is_mjpeg:
+            # Ensure background stream thread is started
+            if self._stream_thread is None or not self._stream_thread.is_alive():
+                self.start()
+
+            with self._frame_lock:
+                if not self._latest_raw_frame:
+                    return None
+                # Check stale frame threshold
+                if (now - self._latest_frame_time) > self.config.stale_timeout_seconds:
+                    return None
+                raw_bytes = self._latest_raw_frame
+                width = self._latest_width
+                height = self._latest_height
         else:
-            # Physical HTTP JPEG snapshot
+            # Physical HTTP JPEG snapshot polling (fallback for port 80 /capture)
             try:
                 response = self.session.get(self.snapshot_url, timeout=self.config.timeout_seconds)
                 if response.status_code == 200:
                     raw_bytes = response.content
                 else:
-                    err = f"HTTP {response.status_code} fetching camera frame"
+                    err = f"HTTP {response.status_code} fetching snapshot frame"
                     self.health.record_fetch_error(err)
                     logger.debug(err)
                     return None
             except requests.exceptions.RequestException as exc:
-                err = f"Camera network failure: {str(exc)}"
+                err = f"Camera snapshot failure: {str(exc)}"
                 self.health.record_fetch_error(err)
                 logger.debug(err)
                 return None
 
-        # Validate acquired frame
-        valid, err_msg = self.validate_jpeg(raw_bytes, max_bytes=self.config.max_frame_bytes)
-        if not valid:
-            self.health.record_fetch_error(f"Invalid frame: {err_msg}")
-            logger.warning(f"ESP32-CAM frame rejected: {err_msg}")
+            valid, err_msg = self.validate_jpeg(raw_bytes, max_bytes=self.config.max_frame_bytes)
+            if not valid:
+                self.health.record_fetch_error(f"Invalid snapshot frame: {err_msg}")
+                logger.warning(f"ESP32-CAM frame rejected: {err_msg}")
+                return None
+
+            width, height = self.get_image_dimensions(raw_bytes)
+            if not width or not height:
+                width, height = 320, 240
+            self.health.record_frame_success(width=width, height=height, size_bytes=len(raw_bytes))
+
+        if not raw_bytes:
             return None
 
-        # Dimensions & encoding
-        width, height = self.get_image_dimensions(raw_bytes)
         frame_base64 = base64.b64encode(raw_bytes).decode("ascii")
-
         self.last_capture_time = now
-        self.health.record_frame_success(width=width, height=height, size_bytes=len(raw_bytes))
 
         return CameraFrame(
             drone_id=self.config.drone_id,
@@ -174,13 +326,13 @@ class ESP32CameraReader:
             captured_at=datetime.now(timezone.utc).isoformat(),
             frame_base64=frame_base64,
             mime_type="image/jpeg",
-            width=width,
-            height=height,
+            width=width or 320,
+            height=height or 240,
             size_bytes=len(raw_bytes),
+            source="SIMULATION" if self.is_mock else "REAL",
             telemetry_lat=telemetry_lat,
             telemetry_lon=telemetry_lon,
             telemetry_alt=telemetry_alt,
             telemetry_heading=telemetry_heading,
             telemetry_age_seconds=telemetry_age_seconds
         )
-

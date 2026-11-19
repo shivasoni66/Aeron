@@ -57,6 +57,13 @@ export const MissionDashboardPage: React.FC = () => {
   const pendingOutcomes = dashboardData?.pendingActions?.outcomesAwaitingReview || [];
   const timeline = dashboardData?.timeline || [];
 
+  const totalMissionsSum = modules.reduce((sum, m) => sum + (m.totalMissions || 0), 0);
+  const getVerticalPercent = (code: string) => {
+    if (totalMissionsSum === 0) return 0;
+    const mod = modules.find((m) => m.code === code);
+    return Math.round(((mod?.totalMissions || 0) / totalMissionsSum) * 100);
+  };
+
   return (
     <div className="flex flex-col w-full px-6 py-6 space-y-6 max-w-[1680px] mx-auto text-text-primary">
       {actionNotice && (
@@ -470,48 +477,56 @@ export const MissionDashboardPage: React.FC = () => {
 
             {/* Proportional Multi-Segment Bar */}
             <div className="space-y-3">
-              <div className="w-full h-3 rounded-full bg-surface-elevated overflow-hidden flex border border-border/60">
-                <div style={{ width: '35%' }} className="bg-aeron-lime h-full" title="Civic Issue Verification (35%)" />
-                <div style={{ width: '25%' }} className="bg-telemetry-cyan h-full" title="Crowd Safety & Mesh (25%)" />
-                <div style={{ width: '20%' }} className="bg-caution-amber h-full" title="Micro-Climate Eco (20%)" />
-                <div style={{ width: '20%' }} className="bg-sar-violet h-full" title="Search & Rescue (20%)" />
-              </div>
+              {totalMissionsSum === 0 ? (
+                <div className="py-6 text-center text-xs text-text-muted font-sans bg-surface-elevated rounded-xl border border-border/60">
+                  No sortie volume recorded yet across verticals
+                </div>
+              ) : (
+                <>
+                  <div className="w-full h-3 rounded-full bg-surface-elevated overflow-hidden flex border border-border/60">
+                    <div style={{ width: `${getVerticalPercent('CIVIC_ISSUE_VERIFICATION')}%` }} className="bg-aeron-lime h-full" title={`Civic Issue Verification (${getVerticalPercent('CIVIC_ISSUE_VERIFICATION')}%)`} />
+                    <div style={{ width: `${getVerticalPercent('CROWD_SAFETY')}%` }} className="bg-telemetry-cyan h-full" title={`Crowd Safety & Mesh (${getVerticalPercent('CROWD_SAFETY')}%)`} />
+                    <div style={{ width: `${getVerticalPercent('MICRO_CLIMATE')}%` }} className="bg-caution-amber h-full" title={`Micro-Climate Eco (${getVerticalPercent('MICRO_CLIMATE')}%)`} />
+                    <div style={{ width: `${getVerticalPercent('SUBTERRANEAN_SEARCH_RESCUE')}%` }} className="bg-sar-violet h-full" title={`Search & Rescue (${getVerticalPercent('SUBTERRANEAN_SEARCH_RESCUE')}%)`} />
+                  </div>
 
-              {/* Legend with Actual Accent Badges */}
-              <div className="grid grid-cols-2 gap-2 text-xs pt-1 font-sans">
-                <div className="flex items-center gap-2 p-2 bg-surface-elevated rounded-lg border border-border/60">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-aeron-lime" />
-                  <span className="text-text-secondary text-xs truncate">Civic verification</span>
-                  <span className="text-aeron-lime font-mono font-bold ml-auto">35%</span>
-                </div>
-                <div className="flex items-center gap-2 p-2 bg-surface-elevated rounded-lg border border-border/60">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-telemetry-cyan" />
-                  <span className="text-text-secondary text-xs truncate">Crowd mesh</span>
-                  <span className="text-telemetry-cyan font-mono font-bold ml-auto">25%</span>
-                </div>
-                <div className="flex items-center gap-2 p-2 bg-surface-elevated rounded-lg border border-border/60">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-caution-amber" />
-                  <span className="text-text-secondary text-xs truncate">Micro-climate</span>
-                  <span className="text-caution-amber font-mono font-bold ml-auto">20%</span>
-                </div>
-                <div className="flex items-center gap-2 p-2 bg-surface-elevated rounded-lg border border-border/60">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-sar-violet" />
-                  <span className="text-text-secondary text-xs truncate">Search & rescue</span>
-                  <span className="text-sar-violet font-mono font-bold ml-auto">20%</span>
-                </div>
-              </div>
+                  {/* Legend with Actual Accent Badges */}
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 font-sans">
+                    <div className="flex items-center gap-2 p-2 bg-surface-elevated rounded-lg border border-border/60">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-aeron-lime" />
+                      <span className="text-text-secondary text-xs truncate">Civic verification</span>
+                      <span className="text-aeron-lime font-mono font-bold ml-auto">{getVerticalPercent('CIVIC_ISSUE_VERIFICATION')}%</span>
+                    </div>
+                    <div className="flex items-center gap-2 p-2 bg-surface-elevated rounded-lg border border-border/60">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-telemetry-cyan" />
+                      <span className="text-text-secondary text-xs truncate">Crowd mesh</span>
+                      <span className="text-telemetry-cyan font-mono font-bold ml-auto">{getVerticalPercent('CROWD_SAFETY')}%</span>
+                    </div>
+                    <div className="flex items-center gap-2 p-2 bg-surface-elevated rounded-lg border border-border/60">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-caution-amber" />
+                      <span className="text-text-secondary text-xs truncate">Micro-climate</span>
+                      <span className="text-caution-amber font-mono font-bold ml-auto">{getVerticalPercent('MICRO_CLIMATE')}%</span>
+                    </div>
+                    <div className="flex items-center gap-2 p-2 bg-surface-elevated rounded-lg border border-border/60">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-sar-violet" />
+                      <span className="text-text-secondary text-xs truncate">Search & rescue</span>
+                      <span className="text-sar-violet font-mono font-bold ml-auto">{getVerticalPercent('SUBTERRANEAN_SEARCH_RESCUE')}%</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           {/* Quick Airframe Readiness Summary */}
           <div className="p-3.5 bg-surface-elevated rounded-xl border border-border/80 text-xs font-sans space-y-2">
             <div className="flex justify-between items-center text-text-muted">
-              <span>Telemetry bridge</span>
-              <span className="text-aeron-lime font-medium">Serial link (TTYACM0)</span>
+              <span>Operational Fleet</span>
+              <span className="text-aeron-lime font-medium">{overview.availableDrones} {overview.availableDrones === 1 ? 'airframe ready' : 'airframes ready'}</span>
             </div>
             <div className="flex justify-between items-center text-text-muted">
-              <span>Heartbeat frequency</span>
-              <span className="text-telemetry-cyan font-medium">1.0 Hz (Synchronized)</span>
+              <span>Sorties in Airspace</span>
+              <span className="text-telemetry-cyan font-medium">{overview.activeMissions} {overview.activeMissions === 1 ? 'active sortie' : 'active sorties'}</span>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 /**
- * AERON Aerospace Systems — Dual-Transport MAVLink Telemetry Bridge
+ * AERON Aerospace Systems — Resilient Dual-Transport MAVLink Telemetry Bridge
  * Target Hardware: ESP32 DevKit V1 (ESP-WROOM-32)
  *
  * ARCHITECTURE (Mobile Hotspot Station Mode):
@@ -47,7 +47,7 @@
 // Set to true to print human-readable Wi-Fi diagnostics to USB Serial (115200 baud).
 // (USB MAVLink forwarding is disabled while debugging so terminal text remains readable).
 // Set to false for standard flight/bench telemetry (clean binary MAVLink forwarded on USB).
-#define WIFI_DIAGNOSTIC_MODE    true
+#define WIFI_DIAGNOSTIC_MODE    false
 
 // ==========================================
 // MANDATORY LOCAL WIFI CREDENTIALS
@@ -85,7 +85,9 @@
 
 #define BUFFER_CHUNK_SIZE       512                  // Ring buffer chunk size for telemetry
 #define UDP_BEACON_INTERVAL_MS  1500                 // UDP discovery broadcast interval
-#define WIFI_RETRY_INTERVAL_MS  15000                // Interval before re-attempting association (15s ensures no scan/handshake abort)
+#define WIFI_RETRY_MIN_MS       3000                 // First recovery attempt after an established link drops
+#define WIFI_RETRY_MAX_MS       30000                // Maximum retry interval (capped exponential backoff)
+#define WIFI_INITIAL_GRACE_MS   10000                // Let the first association/DHCP attempt finish
 #define DIAG_PRINT_INTERVAL_MS  3000                 // Diagnostic periodic status print interval
 
 // ==========================================
@@ -95,6 +97,13 @@ WiFiServer tcpServer(TCP_SERVER_PORT);
 WiFiClient activeTcpClient;
 WiFiUDP    udp;
 WebServer  httpServer(HTTP_SERVER_PORT);
+
+// Wi-Fi event callbacks run on a separate FreeRTOS task. The callback only
+// sets these flags; all Wi-Fi, network-server and metrics work happens in loop().
+volatile bool wifiDisconnectEventPending = false;
+volatile uint8_t wifiDisconnectReasonEvent = 0;
+volatile bool wifiGotIpEventPending = false;
+uint32_t wifiRetryDelayMs = WIFI_RETRY_MIN_MS;
 
 // Operational Statistics & Diagnostic Metrics
 struct TelemetryMetrics {
@@ -129,6 +138,8 @@ void handleRoot();
 void handleStatusApi();
 void handleNotFound();
 void checkWifiState();
+void startNetworkServices();
+void stopNetworkServices();
 void broadcastUdpBeacon();
 void handleUdpProbes();
 void updateStatusLed();
@@ -178,55 +189,22 @@ const char* getDisconnectReasonText(uint8_t reason) {
 // ==========================================
 // WIFI ASYNCHRONOUS EVENT HANDLER
 // ==========================================
+// Arduino-ESP32 invokes Wi-Fi callbacks on a separate FreeRTOS task.
+// Keep this callback short and thread-safe: do not start servers, call WiFi
+// methods, or update the main metrics structure here.
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
-    case ARDUINO_EVENT_WIFI_STA_START:
-#if WIFI_DIAGNOSTIC_MODE
-      Serial.println(F("[WIFI-EVENT] Station interface started (WIFI_STA). Initiating connection..."));
-#endif
-      break;
-
-    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      metrics.wifiConnected = true;
-#if WIFI_DIAGNOSTIC_MODE
-      Serial.printf("[WIFI-EVENT] 802.11 Layer-2 Associated with SSID '%s' (Channel: %d)\n",
-                    AERON_WIFI_SSID, WiFi.channel());
-      Serial.println(F("[WIFI-EVENT] Awaiting DHCP IP lease from smartphone hotspot..."));
-#endif
-      break;
-
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      metrics.wifiConnected = true;
-      strncpy(metrics.assignedIp, WiFi.localIP().toString().c_str(), sizeof(metrics.assignedIp) - 1);
-#if WIFI_DIAGNOSTIC_MODE
-      Serial.println(F("=================================================="));
-      Serial.println(F("  [WIFI SUCCESS] CONNECTED TO MOBILE HOTSPOT!"));
-      Serial.printf("  Assigned DHCP IP: %s\n", metrics.assignedIp);
-      Serial.printf("  Hotspot Gateway : %s\n", WiFi.gatewayIP().toString().c_str());
-      Serial.printf("  Subnet Mask     : %s\n", WiFi.subnetMask().toString().c_str());
-      Serial.printf("  Signal Strength : %d dBm\n", WiFi.RSSI());
-      Serial.printf("  mDNS Hostname   : %s.local\n", MDNS_HOSTNAME);
-      Serial.printf("  TCP MAVLink Port: %d (Ready for GCS)\n", TCP_SERVER_PORT);
-      Serial.println(F("=================================================="));
-#endif
+      wifiGotIpEventPending = true;
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      metrics.wifiConnected = false;
-      metrics.lastDisconnectReason = info.wifi_sta_disconnected.reason;
-      strncpy(metrics.lastDisconnectReasonStr,
-              getDisconnectReasonText(metrics.lastDisconnectReason),
-              sizeof(metrics.lastDisconnectReasonStr) - 1);
-#if WIFI_DIAGNOSTIC_MODE
-      Serial.println(F("[WIFI-EVENT] Disconnected from AP."));
-      Serial.printf("  Numerical Reason Code : %d\n", metrics.lastDisconnectReason);
-      Serial.printf("  Diagnostic Explanation: %s\n", metrics.lastDisconnectReasonStr);
-      if (metrics.lastDisconnectReason == 201) {
-        Serial.println(F("  >> ACTION: Hotspot SSID not found! Ensure phone hotspot is ON and set to 2.4 GHz."));
-      } else if (metrics.lastDisconnectReason == 202 || metrics.lastDisconnectReason == 14) {
-        Serial.println(F("  >> ACTION: Auth failed! Check password or disable WPA3/PMF on phone."));
-      }
-#endif
+      wifiDisconnectReasonEvent = info.wifi_sta_disconnected.reason;
+      wifiDisconnectEventPending = true;
+      break;
+
+    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+      wifiDisconnectEventPending = true;
       break;
 
     default:
@@ -375,141 +353,190 @@ void setup() {
   metrics.mdnsStarted = false;
   metrics.servicesStarted = false;
   metrics.ledState = false;
-  strncpy(metrics.lastDisconnectReasonStr, "None", sizeof(metrics.lastDisconnectReasonStr));
-  strncpy(metrics.clientIp, "None", sizeof(metrics.clientIp));
-  strncpy(metrics.assignedIp, "0.0.0.0", sizeof(metrics.assignedIp));
+  strncpy(metrics.lastDisconnectReasonStr, "None", sizeof(metrics.lastDisconnectReasonStr) - 1);
+  strncpy(metrics.clientIp, "None", sizeof(metrics.clientIp) - 1);
+  strncpy(metrics.assignedIp, "0.0.0.0", sizeof(metrics.assignedIp) - 1);
+  metrics.lastDisconnectReasonStr[sizeof(metrics.lastDisconnectReasonStr) - 1] = '\0';
+  metrics.clientIp[sizeof(metrics.clientIp) - 1] = '\0';
+  metrics.assignedIp[sizeof(metrics.assignedIp) - 1] = '\0';
 
-  // Initialize Status LED
   pinMode(STATUS_LED_PIN, OUTPUT);
   digitalWrite(STATUS_LED_PIN, LOW);
-
-  // 1. Initialize USB Serial
   Serial.begin(USB_SERIAL_BAUD);
 
 #if WIFI_DIAGNOSTIC_MODE
-  delay(1000); // Allow USB-UART bridge to settle
+  delay(300); // Brief USB-UART settle time; no long startup scan.
   Serial.println();
   Serial.println(F("=================================================="));
-  Serial.println(F("  AERON ESP32 TELEMETRY BRIDGE — WI-FI DIAGNOSTICS"));
+  Serial.println(F("  AERON ESP32 TELEMETRY BRIDGE — RESILIENT WI-FI"));
   Serial.println(F("=================================================="));
-  Serial.printf("  Firmware Version  : Station Mode (WIFI_STA) v2.5\n");
+  Serial.printf("  Firmware Version  : Station Mode v2.6\n");
   Serial.printf("  Build Date & Time : %s %s\n", __DATE__, __TIME__);
   Serial.printf("  Credentials Source: %s\n", CREDENTIALS_SOURCE);
   Serial.printf("  Target Hotspot    : \"%s\"\n", AERON_WIFI_SSID);
-  Serial.printf("  Password Length   : %d characters\n", (int)strlen(AERON_WIFI_PASSWORD));
-  Serial.println(F("  Diagnostic Mode   : ACTIVE (USB MAVLink paused for debugging)"));
+  Serial.printf("  Diagnostic Mode   : ACTIVE (USB MAVLink forwarding paused)\n");
+  Serial.println(F("  Wi-Fi recovery    : automatic, 3s–30s backoff"));
   Serial.println(F("--------------------------------------------------"));
 #endif
 
-  // 2. Initialize Pixhawk Hardware UART2 with enlarged RX buffer
+  // Pixhawk TELEM2 UART. Keep the main loop non-blocking after initialization.
   Serial2.setRxBufferSize(2048);
   Serial2.begin(PIXHAWK_BAUD, SERIAL_8N1, UART2_RX_PIN, UART2_TX_PIN);
+  Serial2.setTimeout(1);
+  Serial.setTimeout(1);
 
-  // Register Wi-Fi Event Handler
+  // Register event callback before starting the station interface.
   WiFi.onEvent(onWiFiEvent);
-
-  // 3. Clear any legacy SoftAP or persistent NVS state
-  WiFi.persistent(false);
-  WiFi.disconnect(true);
-  delay(100);
-
-#if WIFI_DIAGNOSTIC_MODE
-  // Perform comprehensive 2.4 GHz airwave scan before calling WiFi.begin()
-  performDiagnosticScan();
-#endif
-
-  // 4. Configure Station Mode (WIFI_STA)
+  WiFi.persistent(false);       // Avoid unnecessary NVS writes during reconnects.
+  WiFi.setHostname(MDNS_HOSTNAME); // Must be set before WiFi.mode()/WiFi.begin().
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.setSleep(false); // Disable Wi-Fi modem sleep for minimal telemetry latency
+  WiFi.setSleep(false);         // Keep the radio awake for continuous telemetry.
 
-  // Initiate connection to Mobile Hotspot
+  // Register HTTP routes once. begin() is called again after each Wi-Fi recovery.
+  httpServer.on("/", HTTP_GET, handleRoot);
+  httpServer.on("/api/status", HTTP_GET, handleStatusApi);
+  httpServer.onNotFound(handleNotFound);
+
 #if WIFI_DIAGNOSTIC_MODE
-  Serial.printf("[CONNECT] Calling WiFi.begin(\"%s\", \"***\")...\n", AERON_WIFI_SSID);
+  Serial.printf("[CONNECT] Starting connection to hotspot '%s'...\n", AERON_WIFI_SSID);
 #endif
   WiFi.begin(AERON_WIFI_SSID, AERON_WIFI_PASSWORD);
-
-  // Allow up to 6.0s for initial association, 4-way handshake, and DHCP lease
-  unsigned long startWait = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - startWait) < 6000) {
-    delay(50);
-  }
-
-  // Record timestamp to give initial connection attempt sufficient time before retry
   metrics.lastWifiRetryMs = millis();
+  wifiRetryDelayMs = WIFI_INITIAL_GRACE_MS;
 
-  // Check state and start network servers if connected
-  checkWifiState();
+  // Do not block setup waiting for DHCP. loop() continues Pixhawk UART service
+  // while Wi-Fi associates and starts the network services when an IP is ready.
 }
 
 // ==========================================
-// WIFI & SERVICES INITIALIZATION
+// WIFI & SERVICES INITIALIZATION / RECOVERY
 // ==========================================
-void checkWifiState() {
-  unsigned long now = millis();
+void startNetworkServices() {
+  if (metrics.servicesStarted) return;
 
-  if (WiFi.status() == WL_CONNECTED) {
-    metrics.wifiConnected = true;
+  String ipStr = WiFi.localIP().toString();
+  strncpy(metrics.assignedIp, ipStr.c_str(), sizeof(metrics.assignedIp) - 1);
+  metrics.assignedIp[sizeof(metrics.assignedIp) - 1] = '\0';
 
-    if (!metrics.servicesStarted) {
-      // Record assigned DHCP IP
-      String ipStr = WiFi.localIP().toString();
-      strncpy(metrics.assignedIp, ipStr.c_str(), sizeof(metrics.assignedIp) - 1);
+  // Start/restart the listeners after a valid DHCP lease is available.
+  tcpServer.begin();
+  tcpServer.setNoDelay(true);
+  udp.stop();
+  udp.begin(UDP_DISCOVERY_PORT);
 
-      // Start MAVLink TCP Server
-      tcpServer.begin();
-      tcpServer.setNoDelay(true); // Disable Nagle's algorithm for immediate low-latency packet dispatch
+  if (metrics.mdnsStarted) {
+    MDNS.end();
+    metrics.mdnsStarted = false;
+  }
+  if (MDNS.begin(MDNS_HOSTNAME)) {
+    MDNS.addService("mavlink", "tcp", TCP_SERVER_PORT);
+    MDNS.addService("http", "tcp", HTTP_SERVER_PORT);
+    metrics.mdnsStarted = true;
+  }
 
-      // Start UDP Discovery Server & Beacon
-      udp.begin(UDP_DISCOVERY_PORT);
+  // Web routes were registered once in setup(); begin() safely restarts listener.
+  httpServer.begin();
+  metrics.lastUdpBeaconMs = 0;
+  metrics.servicesStarted = true;
 
-      // Start mDNS Responder (aeron-esp32.local)
-      if (MDNS.begin(MDNS_HOSTNAME)) {
-        MDNS.addService("mavlink", "tcp", TCP_SERVER_PORT);
-        MDNS.addService("http", "tcp", HTTP_SERVER_PORT);
-        metrics.mdnsStarted = true;
-      }
-
-      // Configure & Start Diagnostic HTTP Server
-      httpServer.on("/", HTTP_GET, handleRoot);
-      httpServer.on("/api/status", HTTP_GET, handleStatusApi);
-      httpServer.onNotFound(handleNotFound);
-      httpServer.begin();
-
-      metrics.servicesStarted = true;
-    }
-  } else {
-    metrics.wifiConnected = false;
-
-    // If services were previously started and Wi-Fi dropped, clean up TCP client
-    if (metrics.servicesStarted) {
-      metrics.servicesStarted = false;
-      metrics.mdnsStarted = false;
-      if (activeTcpClient) {
-        activeTcpClient.stop();
-        metrics.tcpClientConnected = false;
-      }
-      strncpy(metrics.assignedIp, "0.0.0.0", sizeof(metrics.assignedIp));
-    }
-
-    // Graceful non-blocking re-association check
-    if ((now - metrics.lastWifiRetryMs) >= WIFI_RETRY_INTERVAL_MS) {
-      metrics.lastWifiRetryMs = now;
-      metrics.wifiReconnectCount++;
 #if WIFI_DIAGNOSTIC_MODE
-      Serial.println();
-      Serial.printf("[RECONNECT #%lu] Hotspot '%s' not yet associated (Last Reason %d: %s).\n",
-                    metrics.wifiReconnectCount,
-                    AERON_WIFI_SSID,
-                    metrics.lastDisconnectReason,
-                    metrics.lastDisconnectReasonStr);
-      // Run diagnostic scan so user can see live if phone hotspot has been turned on / switched to 2.4 GHz
-      performDiagnosticScan();
-      Serial.printf("[CONNECT] Re-calling WiFi.begin(\"%s\", \"***\")...\n", AERON_WIFI_SSID);
+  Serial.println(F("[NETWORK] Services online after Wi-Fi/DHCP connection."));
+  Serial.printf("[NETWORK] IP: %s | TCP MAVLink: %u | HTTP: %u | UDP discovery: %u\n",
+                metrics.assignedIp, TCP_SERVER_PORT, HTTP_SERVER_PORT, UDP_DISCOVERY_PORT);
 #endif
-      WiFi.disconnect();
-      delay(50);
+}
+
+void stopNetworkServices() {
+  if (activeTcpClient) {
+    activeTcpClient.stop();
+    metrics.tcpDisconnectCount++;
+  }
+  metrics.tcpClientConnected = false;
+  strncpy(metrics.clientIp, "Wi-Fi unavailable", sizeof(metrics.clientIp) - 1);
+  metrics.clientIp[sizeof(metrics.clientIp) - 1] = '\0';
+
+  if (metrics.servicesStarted) {
+    tcpServer.end();
+    udp.stop();
+    httpServer.stop();
+  }
+  if (metrics.mdnsStarted) {
+    MDNS.end();
+    metrics.mdnsStarted = false;
+  }
+
+  metrics.servicesStarted = false;
+  strncpy(metrics.assignedIp, "0.0.0.0", sizeof(metrics.assignedIp) - 1);
+  metrics.assignedIp[sizeof(metrics.assignedIp) - 1] = '\0';
+}
+
+void checkWifiState() {
+  const unsigned long now = millis();
+  const bool connected = (WiFi.status() == WL_CONNECTED);
+
+  // Consume callback flags in loop context. Wi-Fi callbacks run on another task.
+  if (wifiDisconnectEventPending) {
+    const bool wasConnected = metrics.wifiConnected;
+    const uint8_t reason = wifiDisconnectReasonEvent;
+    wifiDisconnectEventPending = false;
+    wifiDisconnectReasonEvent = 0;
+
+    if (reason != 0) {
+      metrics.lastDisconnectReason = reason;
+      strncpy(metrics.lastDisconnectReasonStr, getDisconnectReasonText(reason),
+              sizeof(metrics.lastDisconnectReasonStr) - 1);
+      metrics.lastDisconnectReasonStr[sizeof(metrics.lastDisconnectReasonStr) - 1] = '\0';
+    }
+
+    // Only reset backoff after a real, previously established connection drops.
+    // Failed initial association attempts keep their longer retry grace period.
+    if (wasConnected) {
+      wifiRetryDelayMs = WIFI_RETRY_MIN_MS;
+      metrics.lastWifiRetryMs = now - WIFI_RETRY_MIN_MS;
+    }
+#if WIFI_DIAGNOSTIC_MODE
+    Serial.printf("[WIFI] Link lost. Reason %u: %s\n",
+                  metrics.lastDisconnectReason, metrics.lastDisconnectReasonStr);
+#endif
+  }
+
+  if (connected) {
+    metrics.wifiConnected = true;
+    wifiGotIpEventPending = false;
+    wifiRetryDelayMs = WIFI_RETRY_MIN_MS;
+    if (!metrics.servicesStarted) {
+      startNetworkServices();
+    }
+    return;
+  }
+
+  metrics.wifiConnected = false;
+  if (metrics.servicesStarted || metrics.mdnsStarted || activeTcpClient) {
+    stopNetworkServices();
+  }
+
+  // Automatic reconnect with capped exponential backoff. Do not scan or force
+  // disconnects here: scanning and repeated WiFi.begin() calls can interrupt
+  // the radio and delay MAVLink UART servicing.
+  if ((now - metrics.lastWifiRetryMs) >= wifiRetryDelayMs) {
+    metrics.lastWifiRetryMs = now;
+    metrics.wifiReconnectCount++;
+
+#if WIFI_DIAGNOSTIC_MODE
+    Serial.printf("[WIFI] Reconnect attempt #%lu (next backoff up to %lu ms).\n",
+                  metrics.wifiReconnectCount, (unsigned long)wifiRetryDelayMs);
+#endif
+
+    const bool reconnectStarted = WiFi.reconnect();
+    if (!reconnectStarted) {
+      // Fallback re-applies stored SSID/password if reconnect() cannot start.
       WiFi.begin(AERON_WIFI_SSID, AERON_WIFI_PASSWORD);
+    }
+
+    wifiRetryDelayMs *= 2;
+    if (wifiRetryDelayMs > WIFI_RETRY_MAX_MS) {
+      wifiRetryDelayMs = WIFI_RETRY_MAX_MS;
     }
   }
 }
@@ -651,12 +678,12 @@ void loop() {
     }
   }
 
-  // 3. Read UART2 (Pixhawk) and Forward
+  // 3. Read UART2 (Pixhawk) without blocking and forward
   int availableBytes = Serial2.available();
   if (availableBytes > 0) {
     uint8_t buffer[BUFFER_CHUNK_SIZE];
     int toRead = availableBytes < BUFFER_CHUNK_SIZE ? availableBytes : BUFFER_CHUNK_SIZE;
-    int bytesRead = Serial2.readBytes(buffer, toRead);
+    int bytesRead = Serial2.read(buffer, toRead);
 
     if (bytesRead > 0) {
       metrics.lastMavlinkRxMs = millis();
@@ -700,7 +727,7 @@ void loop() {
   if (usbAvail > 0) {
     uint8_t usbBuf[BUFFER_CHUNK_SIZE];
     int toRead = usbAvail < BUFFER_CHUNK_SIZE ? usbAvail : BUFFER_CHUNK_SIZE;
-    int usbBytesRead = Serial.readBytes(usbBuf, toRead);
+    int usbBytesRead = Serial.read(usbBuf, toRead);
     if (usbBytesRead > 0) {
       Serial2.write(usbBuf, usbBytesRead);
       metrics.usbRxBytes += usbBytesRead;
@@ -862,7 +889,7 @@ void handleRoot() {
   // Diagnostic Mode Warning Banner if enabled
 #if WIFI_DIAGNOSTIC_MODE
   html += "<div style='background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#fbbf24;'>";
-  html += "<strong>&#9888; DIAGNOSTIC MODE ACTIVE:</strong> USB Serial is operating as an interactive debug console at 115200 baud. USB MAVLink forwarding is paused while debugging. Set <code>WIFI_DIAGNOSTIC_MODE false</code> for production telemetry.";
+  html += "<strong>&#9888; DIAGNOSTIC MODE ACTIVE:</strong> USB Serial is operating as a debug console at 115200 baud. USB MAVLink forwarding is paused in this mode. Set <code>WIFI_DIAGNOSTIC_MODE false</code> when you need binary MAVLink over USB.";
   html += "</div>";
 #endif
 

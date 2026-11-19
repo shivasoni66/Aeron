@@ -92,6 +92,12 @@ export class CameraController {
       // Cache latest frame in bounded in-memory store
       const cachedPayload = {
         ...frame,
+        frameBase64: frame.frameData,
+        mimeType: frame.contentType,
+        sizeBytes: frame.frameSizeBytes,
+        width: frame.frameWidth,
+        height: frame.frameHeight,
+        deviceId: frame.cameraId,
         receivedAt
       };
       latestFrames.set(frame.droneId, cachedPayload);
@@ -146,7 +152,16 @@ export class CameraController {
     const updatedAt = new Date().toISOString();
 
     try {
-      latestStatuses.set(status.droneId, { ...status, updatedAt });
+      const enrichedStatus = {
+        ...status,
+        deviceId: status.cameraId,
+        installed: status.connectionStatus !== 'NOT_INSTALLED',
+        reachable: status.connectionStatus === 'CONNECTED' || status.connectionStatus === 'STREAMING',
+        streaming: status.streamStatus === 'STREAMING',
+        fps: status.frameRate || 0,
+        updatedAt
+      };
+      latestStatuses.set(status.droneId, enrichedStatus);
 
       if (mongoose.connection.readyState === 1) {
         const drone = await Drone.findOne({ droneId: status.droneId });
@@ -176,8 +191,9 @@ export class CameraController {
       try {
         const io = getSocketServer();
         const room = `drone:camera:${status.droneId}`;
-        io.to(room).emit(`camera:status:${status.droneId}`, status);
-        io.to(room).emit('camera:status', status);
+        io.to(room).emit(`camera:status:${status.droneId}`, enrichedStatus);
+        io.to(room).emit('camera:status', enrichedStatus);
+        io.to(room).emit('drone:camera:status', enrichedStatus);
       } catch {
         // Socket optional
       }
@@ -185,7 +201,7 @@ export class CameraController {
       res.status(200).json({
         status: 'success',
         message: 'Camera status updated',
-        data: status
+        data: enrichedStatus
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown status update error';
@@ -219,15 +235,20 @@ export class CameraController {
         status: 'success',
         data: {
           droneId,
-          cameraId: cachedStatus?.cameraId || (hardwareDevice as any)?.deviceId || 'CAM-OV2640-01',
-          hardwareInstalled: !!hardwareDevice,
+          cameraId: cachedStatus?.cameraId || (hardwareDevice as any)?.deviceId || 'ESP32-CAM-01',
+          deviceId: cachedStatus?.cameraId || (hardwareDevice as any)?.deviceId || 'ESP32-CAM-01',
+          hardwareInstalled: !!hardwareDevice || (cachedStatus ? (cachedStatus as any).installed ?? (cachedStatus.connectionStatus !== 'NOT_INSTALLED') : false),
+          installed: cachedStatus ? (cachedStatus as any).installed ?? (cachedStatus.connectionStatus !== 'NOT_INSTALLED') : !!hardwareDevice,
+          reachable: cachedStatus ? (cachedStatus as any).reachable ?? (cachedStatus.connectionStatus === 'CONNECTED' || cachedStatus.connectionStatus === 'STREAMING') : false,
+          streaming: isFrameFresh || (cachedStatus?.streamStatus === 'STREAMING'),
           connectionStatus: cachedStatus?.connectionStatus || (hardwareDevice as any)?.connectionStatus || 'NOT_INSTALLED',
           streamStatus: isFrameFresh ? 'STREAMING' : (cachedStatus?.streamStatus || 'OFFLINE'),
           lastFrameAt: cachedFrame?.receivedAt || cachedStatus?.lastFrameAt || null,
           frameFreshness: isFrameFresh ? 'FRESH' : (cachedFrame ? 'STALE' : 'NO_FRAMES'),
           source: cachedStatus?.source || (hardwareDevice as any)?.metadata?.source || 'REAL',
-          resolution: cachedFrame ? `${cachedFrame.frameWidth}x${cachedFrame.frameHeight}` : (cachedStatus?.resolution || '640x480'),
-          frameRate: cachedStatus?.frameRate || 0,
+          resolution: cachedFrame ? `${cachedFrame.frameWidth}x${cachedFrame.frameHeight}` : (cachedStatus?.resolution || '320x240'),
+          frameRate: cachedStatus?.frameRate || (cachedStatus as any)?.fps || 0,
+          fps: cachedStatus?.frameRate || (cachedStatus as any)?.fps || 0,
           hardwareDevice
         }
       });
@@ -261,6 +282,12 @@ export class CameraController {
         status: 'success',
         data: {
           ...cachedFrame,
+          frameBase64: cachedFrame.frameData || (cachedFrame as any).frameBase64,
+          mimeType: cachedFrame.contentType || (cachedFrame as any).mimeType || 'image/jpeg',
+          sizeBytes: cachedFrame.frameSizeBytes || (cachedFrame as any).sizeBytes,
+          width: cachedFrame.frameWidth || (cachedFrame as any).width,
+          height: cachedFrame.frameHeight || (cachedFrame as any).height,
+          deviceId: cachedFrame.cameraId || (cachedFrame as any).deviceId,
           ageMs,
           isStale: ageMs > 5000
         }

@@ -21,12 +21,15 @@ managerRouter.post('/missions/:missionId/events', ManagerController.createMissio
 
 // Incident Management
 managerRouter.get('/incidents', ManagerController.getIncidents);
+managerRouter.post('/incidents', ManagerController.createIncident);
 managerRouter.get('/incidents/:incidentId', ManagerController.getIncidentById);
 managerRouter.patch('/incidents/:incidentId', ManagerController.updateIncident);
 
 // Trip & Route History (Flight Sessions)
 managerRouter.get('/flights', ManagerController.getFlights);
+managerRouter.post('/flights', ManagerController.createFlight);
 managerRouter.get('/flights/:flightSessionId', ManagerController.getFlightById);
+managerRouter.patch('/flights/:flightSessionId', ManagerController.updateFlight);
 
 // Mission Outcomes & Citizen Publishing Pipeline
 managerRouter.get('/outcomes', ManagerController.getOutcomes);
@@ -39,6 +42,7 @@ managerRouter.get('/analytics/overview', ManagerController.getAnalyticsOverview)
 
 // Aircraft Assignment Registry
 managerRouter.get('/drones/available', ManagerController.getAvailableDrones);
+managerRouter.get('/drones/:droneId/telemetry/latest', ManagerController.getDroneLatestTelemetry);
 
 // Citizen Civic Reports Intake & Triage
 managerRouter.get('/citizen-reports', ManagerController.getCitizenReports);
@@ -51,5 +55,18 @@ managerRouter.get('/deliveries/:deliveryId', DeliveryController.getDeliveryById)
 managerRouter.patch('/deliveries/:deliveryId/assign-drone', DeliveryController.assignDrone);
 managerRouter.patch('/deliveries/:deliveryId/status', DeliveryController.updateDeliveryStatus);
 
-export { managerRouter };
+// Central Mission Control & Operating Mode
+managerRouter.get('/mission-control/state', ManagerController.getMissionControlState);
+managerRouter.post('/mission-control/mode', ManagerController.setOperatingMode);
+managerRouter.post('/mission-control/activate', ManagerController.activateMissionControl);
+managerRouter.post('/mission-control/pause', ManagerController.pauseMissionControl);
+managerRouter.post('/mission-control/resume', ManagerController.resumeMissionControl);
+managerRouter.post('/mission-control/stop', ManagerController.stopMissionControl);
 
+// Live AI Observations & Environmental Monitoring
+managerRouter.get('/observations', ManagerController.getObservations);
+managerRouter.patch('/observations/:id/review', ManagerController.reviewObservation);
+managerRouter.get('/environmental/latest', ManagerController.getEnvironmentalLatest);
+managerRouter.get('/environmental/bhopal', ManagerController.getBhopalMicroClimate);
+
+export { managerRouter };

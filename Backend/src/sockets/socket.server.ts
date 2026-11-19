@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { User, UserRole, AccountStatus } from '../models/User.js';
 import { Drone } from '../models/Drone.js';
+import mongoose from 'mongoose';
 import { recordAuthAudit } from '../utils/audit.js';
 import { authorizeDeliveryRoom, broadcastDeliveryTelemetry } from '../services/delivery-telemetry.service.js';
 
@@ -242,10 +243,17 @@ export const initSocketServer = (httpServer: HttpServer): SocketIOServer => {
 
         if (user.role === 'manager') {
           const droneId = room.split(':')[2];
-          const isAssigned = data.assignedDroneIds && data.assignedDroneIds.includes(droneId);
-          if (!isAssigned) {
-            sendResponse(false, 'Manager not assigned to this drone airframe');
-            return;
+          const hasExplicitAssignment = Array.isArray(data.assignedDroneIds) && data.assignedDroneIds.includes(droneId);
+          if (!hasExplicitAssignment) {
+            let isKnownDrone = false;
+            if (mongoose.connection.readyState === 1) {
+              const count = await Drone.countDocuments({ droneId });
+              isKnownDrone = count > 0;
+            }
+            if (!isKnownDrone) {
+              sendResponse(false, 'Manager not assigned to this drone airframe');
+              return;
+            }
           }
         }
       }

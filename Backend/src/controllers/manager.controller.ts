@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { Mission, MissionType, MissionStatus } from '../models/Mission.js';
+import { MissionSession } from '../models/MissionSession.js';
+import { Observation } from '../models/Observation.js';
 import { MissionEvent } from '../models/MissionEvent.js';
 import { Incident } from '../models/Incident.js';
 import { MissionOutcome } from '../models/MissionOutcome.js';
@@ -11,14 +13,50 @@ import { CitizenReport } from '../models/CitizenReport.js';
 import { Notification } from '../models/Notification.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { getSocketServer } from '../sockets/socket.server.js';
+import { EnvironmentalService } from '../services/environmental.service.js';
 import {
   CreateMissionSchema,
   UpdateMissionSchema,
   CreateMissionEventSchema,
+  CreateIncidentSchema,
   UpdateIncidentSchema,
+  CreateFlightSessionSchema,
+  UpdateFlightSessionSchema,
   ReviewOutcomeSchema,
-  PublishOutcomeSchema
+  PublishOutcomeSchema,
+  SetOperatingModeSchema,
+  ActivateMissionControlSchema,
+  ReviewObservationSchema
 } from '../validators/manager.validator.js';
+
+const OPERATIONAL_VERTICALS: MissionType[] = [
+  'CIVIC_ISSUE_VERIFICATION',
+  'CROWD_SAFETY',
+  'SUBTERRANEAN_SEARCH_RESCUE'
+];
+
+async function getOrCreateActiveSession() {
+  let session = await MissionSession.findOne().sort({ updatedAt: -1 });
+  if (!session) {
+    session = await MissionSession.create({
+      sessionId: `SES-STD-${Date.now().toString(36).toUpperCase()}`,
+      operatingMode: 'STANDARD',
+      status: 'IDLE',
+      childSessions: {
+        civic: { status: 'IDLE', pipelineHealth: 'STOPPED', details: 'Awaiting activation' },
+        crowd: { status: 'IDLE', pipelineHealth: 'STOPPED', details: 'Awaiting activation' },
+        sar: { status: 'IDLE', pipelineHealth: 'STOPPED', details: 'Awaiting activation' }
+      },
+      environmentalService: {
+        status: 'ONLINE',
+        lastReadingAt: new Date(),
+        sensorCount: 1,
+        details: 'Continuous background micro-climate monitoring active'
+      }
+    });
+  }
+  return session;
+}
 
 const STAGE_LABELS: Record<number, string> = {
   1: 'STAGE 1/8: MISSION PLANNING',
@@ -400,14 +438,105 @@ export class ManagerController {
         }
 
         const prevStatus = mission.status;
-        mission.status = validated.status;
 
-        if (validated.status === 'ACTIVE' && !mission.actualStart) {
-          mission.actualStart = new Date();
+        if (validated.status === 'ACTIVE') {
+          // Check operational exclusivity lock
+          if (OPERATIONAL_VERTICALS.includes(mission.missionType)) {
+            const session = await getOrCreateActiveSession();
+            if (session.operatingMode === 'MEGA_MISSION' && session.status === 'ACTIVE') {
+              res.status(409).json({
+                status: 'error',
+                code: 'MEGA_MISSION_ACTIVE',
+                message: 'Mega Mission is currently active. Individual standard missions cannot be activated during Mega Mission.'
+              });
+              return;
+            }
+
+            const conflictingMission = await Mission.findOne({
+              _id: { $ne: mission._id },
+              status: { $in: ['ACTIVE', 'PAUSED'] },
+              missionType: { $in: OPERATIONAL_VERTICALS }
+            });
+
+            if (conflictingMission) {
+              res.status(409).json({
+                status: 'error',
+                code: 'MISSION_LOCK_CONFLICT',
+                message: `Operational exclusivity lock active: Mission '${conflictingMission.missionId}' (${conflictingMission.missionType}) is currently ${conflictingMission.status}. Only ONE operational mission may be active at a time.`
+              });
+              return;
+            }
+
+            // Acquire lock atomically
+            session.status = 'ACTIVE';
+            session.activeMissionId = mission.missionId;
+            session.activeMissionType = mission.missionType;
+            if (!session.sessionStartedAt) session.sessionStartedAt = new Date();
+
+            if (mission.missionType === 'CIVIC_ISSUE_VERIFICATION') {
+              session.childSessions.civic = {
+                missionId: mission.missionId,
+                status: 'ACTIVE',
+                pipelineHealth: 'DEGRADED',
+                details: 'Civic pipeline active (MODEL_NOT_AVAILABLE for pothole/garbage_dump)',
+                lastInferenceAt: new Date()
+              };
+            } else if (mission.missionType === 'CROWD_SAFETY') {
+              session.childSessions.crowd = {
+                missionId: mission.missionId,
+                status: 'ACTIVE',
+                pipelineHealth: 'HEALTHY',
+                details: 'Crowd safety & occupancy pipeline active (YOLO + ByteTrack)',
+                modelName: 'yolo11n.pt',
+                lastInferenceAt: new Date()
+              };
+            } else if (mission.missionType === 'SUBTERRANEAN_SEARCH_RESCUE') {
+              session.childSessions.sar = {
+                missionId: mission.missionId,
+                status: 'ACTIVE',
+                pipelineHealth: 'HEALTHY',
+                details: 'SAR optical survivor detection active',
+                modelName: 'yolov8n.pt',
+                lastInferenceAt: new Date()
+              };
+            }
+            await session.save();
+            safeEmit('mission:session_updated', session);
+          }
+          if (!mission.actualStart) {
+            mission.actualStart = new Date();
+          }
         }
+
+        if (validated.status === 'PAUSED') {
+          const session = await MissionSession.findOne().sort({ updatedAt: -1 });
+          if (session && session.activeMissionId === mission.missionId) {
+            session.status = 'PAUSED';
+            if (mission.missionType === 'CIVIC_ISSUE_VERIFICATION') session.childSessions.civic.status = 'PAUSED';
+            if (mission.missionType === 'CROWD_SAFETY') session.childSessions.crowd.status = 'PAUSED';
+            if (mission.missionType === 'SUBTERRANEAN_SEARCH_RESCUE') session.childSessions.sar.status = 'PAUSED';
+            await session.save();
+            safeEmit('mission:session_updated', session);
+          }
+        }
+
         if (['COMPLETED', 'CANCELLED', 'ABORTED'].includes(validated.status)) {
           mission.completedAt = new Date();
+          const session = await MissionSession.findOne().sort({ updatedAt: -1 });
+          if (session && session.activeMissionId === mission.missionId) {
+            session.status = 'IDLE';
+            session.activeMissionId = null;
+            session.activeMissionType = null;
+            session.sessionEndedAt = new Date();
+            if (mission.missionType === 'CIVIC_ISSUE_VERIFICATION') session.childSessions.civic.status = 'STOPPED';
+            if (mission.missionType === 'CROWD_SAFETY') session.childSessions.crowd.status = 'STOPPED';
+            if (mission.missionType === 'SUBTERRANEAN_SEARCH_RESCUE') session.childSessions.sar.status = 'STOPPED';
+            await session.save();
+            safeEmit('mission:session_updated', session);
+          }
         }
+
+        mission.status = validated.status;
 
         await MissionEvent.create({
           missionId: mission._id,
@@ -577,6 +706,77 @@ export class ManagerController {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       res.status(500).json({ status: 'error', code: 'INCIDENTS_FETCH_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/manager/incidents
+   * Creates a new incident log with severity, classification, and geo-coordinates.
+   */
+  public static async createIncident(req: Request, res: Response): Promise<void> {
+    try {
+      const validated = CreateIncidentSchema.parse(req.body);
+
+      // Generate unique incidentId
+      const count = await Incident.countDocuments();
+      const incidentId = `INC-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${String(count + 1).padStart(4, '0')}`;
+
+      let missionObjectId: mongoose.Types.ObjectId | undefined;
+      if (validated.missionId) {
+        const isOid = mongoose.isValidObjectId(validated.missionId);
+        const mission = await Mission.findOne(
+          isOid
+            ? { $or: [{ _id: validated.missionId }, { missionId: validated.missionId.toUpperCase() }] }
+            : { missionId: validated.missionId.toUpperCase() }
+        );
+        if (mission) missionObjectId = mission._id;
+      }
+
+      const incident = new Incident({
+        incidentId,
+        incidentType: validated.incidentType,
+        severity: validated.severity || 'MEDIUM',
+        status: 'OPEN',
+        description: validated.description,
+        isConfidential: validated.isConfidential ?? false,
+        missionId: missionObjectId,
+        location: validated.location || {
+          type: 'Point',
+          coordinates: [77.5946, 12.9716]
+        },
+        reportedAt: new Date(),
+        assignedManager: validated.assignedManager && mongoose.isValidObjectId(validated.assignedManager)
+          ? new mongoose.Types.ObjectId(validated.assignedManager)
+          : req.user?.id ? new mongoose.Types.ObjectId(req.user.id) : undefined
+      });
+
+      await incident.save();
+
+      // Audit Log
+      await AuditLog.create({
+        actorId: req.user?.id ? new mongoose.Types.ObjectId(req.user.id) : undefined,
+        action: 'INCIDENT_CREATED',
+        entityType: 'Incident',
+        entityId: incident.incidentId,
+        source: req.user?.role === 'admin' ? 'ADMIN_WEB' : 'MANAGER_WEB',
+        metadata: { severity: incident.severity, isConfidential: incident.isConfidential }
+      });
+
+      const populated = await Incident.findById(incident._id)
+        .populate('missionId', 'missionId title missionType')
+        .populate('assignedManager', 'name email role');
+
+      safeEmit('incident:created', populated || incident);
+      safeEmit('incident:updated', populated || incident);
+
+      res.status(201).json({
+        status: 'success',
+        message: 'Incident reported and recorded successfully',
+        data: { incident: populated || incident }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(400).json({ status: 'error', code: 'INCIDENT_CREATE_FAILED', message: msg });
     }
   }
 
@@ -759,6 +959,126 @@ export class ManagerController {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       res.status(500).json({ status: 'error', code: 'FLIGHT_FETCH_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/manager/flights
+   * Creates a new flight session record.
+   */
+  public static async createFlight(req: Request, res: Response): Promise<void> {
+    try {
+      const validated = CreateFlightSessionSchema.parse(req.body);
+
+      // Find drone
+      const isOid = mongoose.isValidObjectId(validated.droneId);
+      const drone = await Drone.findOne(
+        isOid
+          ? { $or: [{ _id: validated.droneId }, { droneId: validated.droneId }] }
+          : { droneId: validated.droneId }
+      );
+      if (!drone) {
+        res.status(404).json({ status: 'error', code: 'DRONE_NOT_FOUND', message: `Drone '${validated.droneId}' not found` });
+        return;
+      }
+
+      let missionObjectId: mongoose.Types.ObjectId | undefined;
+      if (validated.missionId) {
+        const isMOid = mongoose.isValidObjectId(validated.missionId);
+        const mission = await Mission.findOne(
+          isMOid
+            ? { $or: [{ _id: validated.missionId }, { missionId: validated.missionId.toUpperCase() }] }
+            : { missionId: validated.missionId.toUpperCase() }
+        );
+        if (mission) missionObjectId = mission._id;
+      }
+
+      const count = await FlightSession.countDocuments();
+      const flightSessionId = `FLT-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${String(count + 1).padStart(4, '0')}`;
+
+      const flight = new FlightSession({
+        flightSessionId,
+        droneId: drone._id,
+        missionId: missionObjectId,
+        startedAt: new Date(),
+        status: 'ACTIVE',
+        source: validated.source || 'REAL',
+        startLocation: validated.startLocation || {
+          type: 'Point',
+          coordinates: [77.5946, 12.9716]
+        },
+        durationSeconds: 0,
+        summary: validated.summary || `Airborne sortie logged for ${drone.droneId}`
+      });
+
+      await flight.save();
+
+      const populated = await FlightSession.findById(flight._id)
+        .populate('droneId', 'droneId displayName model operationalStatus')
+        .populate('missionId', 'missionId title missionType');
+
+      safeEmit('flight:created', populated || flight);
+      safeEmit('flight:updated', populated || flight);
+
+      res.status(201).json({
+        status: 'success',
+        message: 'Flight session initialized',
+        data: { flight: populated || flight }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(400).json({ status: 'error', code: 'FLIGHT_CREATE_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * PATCH /api/v1/manager/flights/:flightSessionId
+   * Updates flight session status (COMPLETED/ABORTED), duration, and end location.
+   */
+  public static async updateFlight(req: Request, res: Response): Promise<void> {
+    try {
+      const flightSessionId = String(req.params.flightSessionId);
+      const validated = UpdateFlightSessionSchema.parse(req.body);
+
+      const isOid = mongoose.isValidObjectId(flightSessionId);
+      const flight = await FlightSession.findOne(
+        isOid
+          ? { $or: [{ _id: flightSessionId }, { flightSessionId: flightSessionId.toUpperCase() }] }
+          : { flightSessionId: flightSessionId.toUpperCase() }
+      );
+      if (!flight) {
+        res.status(404).json({ status: 'error', code: 'FLIGHT_NOT_FOUND', message: `Flight session '${flightSessionId}' not found` });
+        return;
+      }
+
+      if (validated.status) {
+        flight.status = validated.status;
+        if (['COMPLETED', 'ABORTED'].includes(validated.status) && !flight.endedAt) {
+          flight.endedAt = new Date();
+          if (!flight.durationSeconds || flight.durationSeconds === 0) {
+            flight.durationSeconds = Math.max(1, Math.round((flight.endedAt.getTime() - flight.startedAt.getTime()) / 1000));
+          }
+        }
+      }
+      if (validated.durationSeconds !== undefined) flight.durationSeconds = validated.durationSeconds;
+      if (validated.endLocation) flight.endLocation = validated.endLocation;
+      if (validated.summary) flight.summary = validated.summary;
+
+      await flight.save();
+
+      const populated = await FlightSession.findById(flight._id)
+        .populate('droneId', 'droneId displayName model operationalStatus')
+        .populate('missionId', 'missionId title missionType');
+
+      safeEmit('flight:updated', populated || flight);
+
+      res.status(200).json({
+        status: 'success',
+        data: { flight: populated || flight }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(400).json({ status: 'error', code: 'FLIGHT_UPDATE_FAILED', message: msg });
     }
   }
 
@@ -1046,6 +1366,48 @@ export class ManagerController {
   }
 
   /**
+   * GET /api/v1/manager/drones/:droneId/telemetry/latest
+   * Returns authoritative latest telemetry record for an airframe with source filtering.
+   */
+  public static async getDroneLatestTelemetry(req: Request, res: Response): Promise<void> {
+    try {
+      const droneId = req.params.droneId as string;
+      const drone = await Drone.findOne({ droneId });
+      if (!drone) {
+        res.status(404).json({
+          status: 'error',
+          code: 'DRONE_NOT_FOUND',
+          message: `Drone '${droneId}' not found in registry`
+        });
+        return;
+      }
+
+      const source = (req.query.source as string | undefined)?.toUpperCase();
+      const isSimParam = req.query.isSimulated as string | undefined;
+
+      const query: any = { droneId: drone._id };
+      if (source === 'REAL' || isSimParam === 'false') {
+        query.isSimulated = { $ne: true };
+        query.source = { $ne: 'SIMULATION' };
+      } else if (source === 'SIMULATION' || isSimParam === 'true') {
+        query.$or = [{ isSimulated: true }, { source: 'SIMULATION' }];
+      }
+
+      const telemetry = await TelemetryRecord.findOne(query)
+        .sort({ recordedAt: -1 })
+        .lean();
+
+      res.status(200).json({
+        status: 'success',
+        data: { telemetry: telemetry || null }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'TELEMETRY_FETCH_FAILED', message: msg });
+    }
+  }
+
+  /**
    * GET /api/v1/manager/citizen-reports
    * List citizen issue reports with filtering, pagination, and media assets.
    */
@@ -1182,6 +1544,482 @@ export class ManagerController {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       res.status(500).json({ status: 'error', code: 'CITIZEN_REPORT_UPDATE_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * GET /api/v1/manager/mission-control/state
+   * Retrieves active operating mode, pipeline health, and exclusivity lock status.
+   */
+  public static async getMissionControlState(req: Request, res: Response): Promise<void> {
+    try {
+      const session = await getOrCreateActiveSession();
+      res.status(200).json({
+        status: 'success',
+        data: { session }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'MISSION_CONTROL_STATE_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/manager/mission-control/mode
+   * Switch central operating mode between STANDARD and MEGA_MISSION.
+   */
+  public static async setOperatingMode(req: Request, res: Response): Promise<void> {
+    try {
+      const validated = SetOperatingModeSchema.parse(req.body);
+      const session = await getOrCreateActiveSession();
+
+      if (session.status === 'ACTIVE' && session.operatingMode !== validated.mode) {
+        res.status(409).json({
+          status: 'error',
+          code: 'CANNOT_CHANGE_MODE_WHILE_ACTIVE',
+          message: `Cannot switch operating mode from ${session.operatingMode} to ${validated.mode} while a session is actively running. Stop active mission first.`
+        });
+        return;
+      }
+
+      session.operatingMode = validated.mode;
+      await session.save();
+      safeEmit('mission:session_updated', session);
+
+      res.status(200).json({
+        status: 'success',
+        message: `Operating mode set to ${validated.mode}`,
+        data: { session }
+      });
+    } catch (err: unknown) {
+      if (err instanceof Error && 'issues' in err) {
+        res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: err.message, details: (err as any).issues });
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'SET_OPERATING_MODE_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/manager/mission-control/activate
+   * Activates either a Standard Mission (with exclusive lock) or Mega Mission (all 3 pipelines).
+   */
+  public static async activateMissionControl(req: Request, res: Response): Promise<void> {
+    try {
+      const validated = ActivateMissionControlSchema.parse(req.body);
+      const session = await getOrCreateActiveSession();
+
+      if (validated.mode === 'MEGA_MISSION') {
+        session.operatingMode = 'MEGA_MISSION';
+        session.status = 'ACTIVE';
+        session.sessionStartedAt = new Date();
+        session.sessionEndedAt = null;
+        session.activeMissionId = `MEGA-SES-${Date.now().toString(36).toUpperCase()}`;
+        session.activeMissionType = null;
+
+        session.childSessions.civic = {
+          missionId: 'MEGA-CIVIC-CHILD',
+          status: 'ACTIVE',
+          pipelineHealth: 'DEGRADED',
+          details: 'Civic pipeline running in degraded mode: MODEL_NOT_AVAILABLE for [pothole, garbage_dump]. Frame capture active.',
+          lastInferenceAt: new Date()
+        };
+        session.childSessions.crowd = {
+          missionId: 'MEGA-CROWD-CHILD',
+          status: 'ACTIVE',
+          pipelineHealth: 'HEALTHY',
+          details: 'Crowd safety pipeline active: YOLO + ByteTrack occupancy tracking',
+          modelName: 'yolo11n.pt',
+          lastInferenceAt: new Date()
+        };
+        session.childSessions.sar = {
+          missionId: 'MEGA-SAR-CHILD',
+          status: 'ACTIVE',
+          pipelineHealth: 'HEALTHY',
+          details: 'SAR visual search pipeline active: optical person detection',
+          modelName: 'yolov8n.pt',
+          lastInferenceAt: new Date()
+        };
+
+        await session.save();
+        safeEmit('mission:session_updated', session);
+
+        res.status(200).json({
+          status: 'success',
+          message: 'Mega Mission activated. All 3 operational pipelines started concurrently.',
+          data: { session }
+        });
+        return;
+      }
+
+      if (validated.mode === 'STANDARD') {
+        if (!validated.missionId) {
+          res.status(400).json({
+            status: 'error',
+            code: 'MISSION_ID_REQUIRED',
+            message: 'Standard Mode activation requires a valid missionId'
+          });
+          return;
+        }
+
+        const isOid = mongoose.isValidObjectId(validated.missionId);
+        const mission = await Mission.findOne(
+          isOid
+            ? { $or: [{ _id: validated.missionId }, { missionId: validated.missionId.toUpperCase() }] }
+            : { missionId: validated.missionId.toUpperCase() }
+        );
+
+        if (!mission) {
+          res.status(404).json({
+            status: 'error',
+            code: 'MISSION_NOT_FOUND',
+            message: `Mission '${validated.missionId}' not found`
+          });
+          return;
+        }
+
+        if (OPERATIONAL_VERTICALS.includes(mission.missionType)) {
+          const conflicting = await Mission.findOne({
+            _id: { $ne: mission._id },
+            status: { $in: ['ACTIVE', 'PAUSED'] },
+            missionType: { $in: OPERATIONAL_VERTICALS }
+          });
+
+          if (conflicting) {
+            res.status(409).json({
+              status: 'error',
+              code: 'MISSION_LOCK_CONFLICT',
+              message: `Operational exclusivity lock active: Mission '${conflicting.missionId}' (${conflicting.missionType}) is currently ${conflicting.status}. Only ONE operational mission may be active at a time.`
+            });
+            return;
+          }
+        }
+
+        mission.status = 'ACTIVE';
+        if (!mission.actualStart) mission.actualStart = new Date();
+        await mission.save();
+
+        session.operatingMode = 'STANDARD';
+        session.status = 'ACTIVE';
+        session.activeMissionId = mission.missionId;
+        session.activeMissionType = mission.missionType;
+        session.sessionStartedAt = new Date();
+        session.sessionEndedAt = null;
+
+        if (mission.missionType === 'CIVIC_ISSUE_VERIFICATION') {
+          session.childSessions.civic = {
+            missionId: mission.missionId,
+            status: 'ACTIVE',
+            pipelineHealth: 'DEGRADED',
+            details: 'Civic pipeline active (Awaiting custom pothole/garbage model weights)',
+            lastInferenceAt: new Date()
+          };
+        } else if (mission.missionType === 'CROWD_SAFETY') {
+          session.childSessions.crowd = {
+            missionId: mission.missionId,
+            status: 'ACTIVE',
+            pipelineHealth: 'HEALTHY',
+            details: 'Crowd safety pipeline active (YOLO + ByteTrack)',
+            modelName: 'yolo11n.pt',
+            lastInferenceAt: new Date()
+          };
+        } else if (mission.missionType === 'SUBTERRANEAN_SEARCH_RESCUE') {
+          session.childSessions.sar = {
+            missionId: mission.missionId,
+            status: 'ACTIVE',
+            pipelineHealth: 'HEALTHY',
+            details: 'SAR visual survivor search active (Optical person model)',
+            modelName: 'yolov8n.pt',
+            lastInferenceAt: new Date()
+          };
+        }
+
+        await session.save();
+        safeEmit('mission:updated', mission);
+        safeEmit('mission:session_updated', session);
+
+        res.status(200).json({
+          status: 'success',
+          message: `Standard mission '${mission.missionId}' activated with exclusivity lock`,
+          data: { mission, session }
+        });
+        return;
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && 'issues' in err) {
+        res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: err.message, details: (err as any).issues });
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'MISSION_CONTROL_ACTIVATE_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/manager/mission-control/pause
+   */
+  public static async pauseMissionControl(req: Request, res: Response): Promise<void> {
+    try {
+      const session = await getOrCreateActiveSession();
+      session.status = 'PAUSED';
+      if (session.childSessions.civic.status === 'ACTIVE') session.childSessions.civic.status = 'PAUSED';
+      if (session.childSessions.crowd.status === 'ACTIVE') session.childSessions.crowd.status = 'PAUSED';
+      if (session.childSessions.sar.status === 'ACTIVE') session.childSessions.sar.status = 'PAUSED';
+
+      await session.save();
+
+      if (session.activeMissionId) {
+        await Mission.updateOne(
+          { missionId: session.activeMissionId },
+          { $set: { status: 'PAUSED' } }
+        );
+      }
+
+      safeEmit('mission:session_updated', session);
+      res.status(200).json({
+        status: 'success',
+        message: 'Mission session paused (exclusivity lock retained)',
+        data: { session }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'MISSION_CONTROL_PAUSE_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/manager/mission-control/resume
+   */
+  public static async resumeMissionControl(req: Request, res: Response): Promise<void> {
+    try {
+      const session = await getOrCreateActiveSession();
+      session.status = 'ACTIVE';
+      if (session.childSessions.civic.status === 'PAUSED') session.childSessions.civic.status = 'ACTIVE';
+      if (session.childSessions.crowd.status === 'PAUSED') session.childSessions.crowd.status = 'ACTIVE';
+      if (session.childSessions.sar.status === 'PAUSED') session.childSessions.sar.status = 'ACTIVE';
+
+      await session.save();
+
+      if (session.activeMissionId) {
+        await Mission.updateOne(
+          { missionId: session.activeMissionId },
+          { $set: { status: 'ACTIVE' } }
+        );
+      }
+
+      safeEmit('mission:session_updated', session);
+      res.status(200).json({
+        status: 'success',
+        message: 'Mission session resumed',
+        data: { session }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'MISSION_CONTROL_RESUME_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * POST /api/v1/manager/mission-control/stop
+   */
+  public static async stopMissionControl(req: Request, res: Response): Promise<void> {
+    try {
+      const session = await getOrCreateActiveSession();
+      session.status = 'IDLE';
+      const stoppedMissionId = session.activeMissionId;
+      session.activeMissionId = null;
+      session.activeMissionType = null;
+      session.sessionEndedAt = new Date();
+
+      session.childSessions.civic.status = 'STOPPED';
+      session.childSessions.civic.pipelineHealth = 'STOPPED';
+      session.childSessions.crowd.status = 'STOPPED';
+      session.childSessions.crowd.pipelineHealth = 'STOPPED';
+      session.childSessions.sar.status = 'STOPPED';
+      session.childSessions.sar.pipelineHealth = 'STOPPED';
+
+      await session.save();
+
+      if (stoppedMissionId) {
+        await Mission.updateOne(
+          { missionId: stoppedMissionId },
+          { $set: { status: 'COMPLETED', completedAt: new Date() } }
+        );
+      }
+
+      safeEmit('mission:session_updated', session);
+      res.status(200).json({
+        status: 'success',
+        message: 'Mission session stopped cleanly and exclusivity locks released',
+        data: { session }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'MISSION_CONTROL_STOP_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * GET /api/v1/manager/observations
+   * Retrieves paginated live AI observations with optional vertical filtering.
+   */
+  public static async getObservations(req: Request, res: Response): Promise<void> {
+    try {
+      const { missionType, missionId, verificationStatus } = req.query;
+      const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+      const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '20'), 10)));
+      const skip = (page - 1) * limit;
+
+      const filter: any = {};
+      if (missionType) filter.missionType = String(missionType);
+      if (missionId) filter.missionId = String(missionId);
+      if (verificationStatus) filter.verificationStatus = String(verificationStatus);
+
+      const [observations, total] = await Promise.all([
+        Observation.find(filter)
+          .sort({ detectedAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('reviewedBy', 'name email role')
+          .lean(),
+        Observation.countDocuments(filter)
+      ]);
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          observations,
+          total,
+          page,
+          totalPages: Math.ceil(total / limit)
+        }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'OBSERVATIONS_FETCH_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * PATCH /api/v1/manager/observations/:id/review
+   * Allows manager to review, accept, or reject an AI observation.
+   */
+  public static async reviewObservation(req: Request, res: Response): Promise<void> {
+    try {
+      const observationId = String(req.params.id);
+      const validated = ReviewObservationSchema.parse(req.body);
+
+      const isOid = mongoose.isValidObjectId(observationId);
+      const observation = await Observation.findOne(
+        isOid
+          ? { $or: [{ _id: observationId }, { observationId: observationId.toUpperCase() }] }
+          : { observationId: observationId.toUpperCase() }
+      );
+
+      if (!observation) {
+        res.status(404).json({
+          status: 'error',
+          code: 'OBSERVATION_NOT_FOUND',
+          message: `Observation '${observationId}' not found`
+        });
+        return;
+      }
+
+      observation.verificationStatus = validated.verificationStatus;
+      if (validated.reviewNotes !== undefined) observation.reviewNotes = validated.reviewNotes;
+      observation.reviewedAt = new Date();
+      if (req.user?.id && mongoose.isValidObjectId(req.user.id)) {
+        observation.reviewedBy = new mongoose.Types.ObjectId(req.user.id);
+      }
+
+      await observation.save();
+      safeEmit('observation:updated', observation);
+
+      res.status(200).json({
+        status: 'success',
+        message: `Observation ${observation.observationId} updated to ${observation.verificationStatus}`,
+        data: { observation }
+      });
+    } catch (err: unknown) {
+      if (err instanceof Error && 'issues' in err) {
+        res.status(400).json({ status: 'error', code: 'VALIDATION_FAILED', message: err.message, details: (err as any).issues });
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'OBSERVATION_REVIEW_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * GET /api/v1/manager/environmental/latest
+   * Micro-climate always-on environmental telemetry feed.
+   */
+  public static async getEnvironmentalLatest(req: Request, res: Response): Promise<void> {
+    try {
+      const latestTelemetry = await TelemetryRecord.findOne({
+        $or: [
+          { 'sensorHealth.temperature': { $exists: true } },
+          { 'sensorHealth.humidity': { $exists: true } },
+          { 'sensorHealth.pressure': { $exists: true } }
+        ]
+      })
+        .sort({ recordedAt: -1 })
+        .lean();
+
+      const session = await MissionSession.findOne().sort({ updatedAt: -1 });
+
+      if (latestTelemetry && latestTelemetry.sensorHealth) {
+        res.status(200).json({
+          status: 'success',
+          data: {
+            serviceStatus: 'ONLINE',
+            lastReadingAt: latestTelemetry.recordedAt,
+            sensors: latestTelemetry.sensorHealth,
+            droneId: latestTelemetry.droneId,
+            details: 'Live environmental readings from drone I2C/SPI sensors'
+          }
+        });
+        return;
+      }
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          serviceStatus: session?.environmentalService?.status || 'NOT_CONNECTED',
+          lastReadingAt: session?.environmentalService?.lastReadingAt || null,
+          sensors: null,
+          details: 'No active environmental hardware sensors streaming telemetry. Showing honest standby state.'
+        }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ status: 'error', code: 'ENVIRONMENTAL_FETCH_FAILED', message: msg });
+    }
+  }
+
+  /**
+   * GET /api/v1/manager/environmental/bhopal
+   * Retrieves live atmospheric weather, CAMS air quality, hourly & 7-day forecasts
+   * for Bhopal, Madhya Pradesh, India via Open-Meteo with caching, rate-limited manual refresh,
+   * and isolated hardware sensor status.
+   */
+  public static async getBhopalMicroClimate(req: Request, res: Response): Promise<void> {
+    try {
+      const forceRefresh = req.query.refresh === 'true';
+      const data = await EnvironmentalService.getBhopalMicroClimate(forceRefresh);
+
+      res.status(200).json({
+        status: 'success',
+        data
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to retrieve environmental data';
+      res.status(503).json({
+        status: 'error',
+        code: 'ENVIRONMENTAL_SERVICE_UNAVAILABLE',
+        message: msg
+      });
     }
   }
 }

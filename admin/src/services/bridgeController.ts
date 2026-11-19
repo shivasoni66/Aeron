@@ -23,8 +23,15 @@ export interface BridgeStatusResponse {
   status: BridgeStatus;
   managed_pid: number | null;
   transport: string;
+  backend_url?: string;
+  bridge_process_state?: 'STOPPED' | 'STARTING' | 'RUNNING' | 'STOPPING' | 'ERROR';
+  transport_state?: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR';
   esp32_state: 'DISCONNECTED' | 'DISCOVERING' | 'CONNECTING' | 'CONNECTED';
   heartbeat_state: 'NO_HEARTBEAT' | 'AWAITING' | 'HEALTHY' | 'LOST';
+  backend_state?: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'UPLOAD_ERROR';
+  backend_delivered_count?: number;
+  mavlink_rx_bytes?: number;
+  mavlink_rx_packets?: number;
   telemetry_fresh: boolean;
   telemetry_age_ms: number | null;
   message_rate_hz: number;
@@ -32,6 +39,26 @@ export interface BridgeStatusResponse {
   last_error: string | null;
   recent_logs: string[];
   started_at: number | null;
+}
+
+export interface DiagnosticCheckItem {
+  id: string;
+  name: string;
+  status: 'PASS' | 'WARNING' | 'FAIL' | 'WAITING' | 'NOT TESTED';
+  details: string;
+}
+
+export interface BridgeDiagnosticsResponse {
+  timestamp: string;
+  overall: 'PASS' | 'WARNING' | 'FAIL' | 'WAITING';
+  summary: {
+    total: number;
+    passed: number;
+    warnings: number;
+    failed: number;
+    waiting: number;
+  };
+  checks: DiagnosticCheckItem[];
 }
 
 export interface BridgeHealthResponse {
@@ -132,9 +159,12 @@ export const fetchBridgeStatus = async (): Promise<BridgeStatusResponse> => {
 };
 
 /**
- * Sends a command to start the Python MAVLink Wi-Fi telemetry bridge.
+ * Sends a command to start the Python MAVLink telemetry bridge.
  */
-export const startBridgeService = async (token?: string): Promise<{ success: boolean; message: string; status?: BridgeStatus }> => {
+export const startBridgeService = async (
+  token?: string,
+  options?: { transport?: string; backendUrl?: string; droneId?: string }
+): Promise<{ success: boolean; message: string; status?: BridgeStatus }> => {
   const activeToken = token || getStoredBridgeToken() || await fetchBridgeTokenFromLoopback();
   if (!activeToken) {
     return {
@@ -144,12 +174,18 @@ export const startBridgeService = async (token?: string): Promise<{ success: boo
   }
 
   try {
+    const body: Record<string, any> = {};
+    if (options?.transport) body.transport = options.transport;
+    if (options?.backendUrl) body.backend_url = options.backendUrl;
+    if (options?.droneId) body.drone_id = options.droneId;
+
     const res = await fetch(`${CONTROLLER_BASE_URL}/api/bridge/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-AERON-TOKEN': activeToken
-      }
+      },
+      body: JSON.stringify(body)
     });
 
     const data = await res.json();
@@ -233,6 +269,30 @@ export const restartBridgeService = async (token?: string): Promise<{ success: b
       success: false,
       message: err?.message || 'Could not connect to AERON Bridge Controller.'
     };
+  }
+};
+
+/**
+ * Executes the 13-stage telemetry bridge self-diagnostics test suite.
+ */
+export const runBridgeDiagnostics = async (): Promise<BridgeDiagnosticsResponse | null> => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const res = await fetch(`${CONTROLLER_BASE_URL}/api/bridge/diagnostics`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      return (await res.json()) as BridgeDiagnosticsResponse;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[BridgeController] Could not fetch bridge diagnostics:', err);
+    return null;
   }
 };
 

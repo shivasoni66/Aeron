@@ -69,6 +69,21 @@ param(
     [string]$BackendUrl = "",
 
     [Parameter()]
+    [switch]$Camera,
+
+    [Parameter()]
+    [string]$CameraHost = "",
+
+    [Parameter()]
+    [int]$CameraPort = 0,
+
+    [Parameter()]
+    [string]$CameraProtocol = "",
+
+    [Parameter()]
+    [double]$CameraFps = 0.0,
+
+    [Parameter()]
     [switch]$SimulationFallback,
 
     [Parameter()]
@@ -175,8 +190,19 @@ $activeUsbBaud = if ($UsbBaud -gt 0) { $UsbBaud } elseif ($envConfig["AERON_USB_
 $activeDroneId = if ($DroneId) { $DroneId } elseif ($envConfig["DRONE_ID"]) { $envConfig["DRONE_ID"] } else { "AERON-HEX-01" }
 $activeBackend = if ($BackendUrl) { $BackendUrl } elseif ($envConfig["AERON_BACKEND_URL"]) { $envConfig["AERON_BACKEND_URL"] } else { "http://localhost:5000/api/v1" }
 
+$activeCameraEnabled = if ($Camera) { $true } elseif ($envConfig["CAMERA_ENABLED"] -in @("true", "1", "yes")) { $true } else { $false }
+$activeCameraHost = if ($CameraHost) { $CameraHost } elseif ($envConfig["CAMERA_HOST"]) { $envConfig["CAMERA_HOST"] } else { "10.231.241.200" }
+$activeCameraPort = if ($CameraPort -gt 0) { $CameraPort } elseif ($envConfig["CAMERA_PORT"]) { [int]$envConfig["CAMERA_PORT"] } else { 81 }
+$activeCameraFps = if ($CameraFps -gt 0) { $CameraFps } elseif ($envConfig["CAMERA_TARGET_FPS"]) { [double]$envConfig["CAMERA_TARGET_FPS"] } else { 5.0 }
+$activeCameraProtocol = if ($CameraProtocol) { $CameraProtocol } elseif ($envConfig["CAMERA_PROTOCOL"]) { $envConfig["CAMERA_PROTOCOL"] } else { "MJPEG" }
+
 Write-Host "  Airframe ID   : ${activeDroneId}" -ForegroundColor White
 Write-Host "  Transport Mode: ${Transport}" -ForegroundColor White
+if ($activeCameraEnabled) {
+    Write-Host "  Camera Relay  : ENABLED (http://${activeCameraHost}:${activeCameraPort} @ ${activeCameraFps} FPS via ${activeCameraProtocol})" -ForegroundColor Cyan
+} else {
+    Write-Host "  Camera Relay  : Disabled" -ForegroundColor DarkGray
+}
 
 # -----------------------------------------------------------------------------
 # 4. Check Backend Health
@@ -200,6 +226,9 @@ Write-Host "[5/6] Validating transport connection requirements..." -ForegroundCo
 if ($SimulationFallback) {
     Write-Host "  SIMULATION FALLBACK REQUESTED. Starting simulated bench telemetry..." -ForegroundColor Magenta
     $simArgs = @("-m", "src.main", "--simulator", "--drone-id", $activeDroneId, "--backend-url", $activeBackend)
+    if ($activeCameraEnabled) {
+        $simArgs += @("--camera", "--camera-host", $activeCameraHost, "--camera-port", [string]$activeCameraPort, "--camera-protocol", $activeCameraProtocol, "--camera-fps", [string]$activeCameraFps)
+    }
     if ($DryRun) {
         Write-Host "  DRY RUN: Arguments verified -> $pythonExe $($simArgs -join ' ')" -ForegroundColor Cyan
         exit 0
@@ -295,6 +324,16 @@ if ($Transport -in @("usb", "dual")) {
     $pyArgs += @(
         "--usb-port", $activeUsbPort,
         "--usb-baud", [string]$activeUsbBaud
+    )
+}
+
+if ($activeCameraEnabled) {
+    $pyArgs += @(
+        "--camera",
+        "--camera-host", $activeCameraHost,
+        "--camera-port", [string]$activeCameraPort,
+        "--camera-protocol", $activeCameraProtocol,
+        "--camera-fps", [string]$activeCameraFps
     )
 }
 

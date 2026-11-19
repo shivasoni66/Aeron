@@ -72,29 +72,61 @@ export const subscribeToMissionEvents = (
 };
 
 /**
- * Subscribes to global manager-level operational updates (new missions, incidents, outcomes).
+ * Subscribes to global manager-level operational updates (missions, incidents, outcomes, drones, flights, reports).
  */
 export const subscribeToManagerBroadcasts = (callbacks: {
   onMissionCreated?: (mission: any) => void;
   onMissionUpdated?: (mission: any) => void;
+  onMissionStageChanged?: (data: any) => void;
+  onIncidentCreated?: (incident: any) => void;
   onIncidentUpdated?: (incident: any) => void;
   onOutcomeReviewed?: (outcome: any) => void;
   onOutcomePublished?: (outcome: any) => void;
+  onDroneRegistered?: (drone: any) => void;
+  onDroneUpdated?: (drone: any) => void;
+  onFlightCreated?: (flight: any) => void;
+  onFlightUpdated?: (flight: any) => void;
+  onReportUpdated?: (report: any) => void;
+  onReconnect?: () => void;
 }): (() => void) => {
   const s = connectSocket();
 
   if (callbacks.onMissionCreated) s.on('mission:created', callbacks.onMissionCreated);
   if (callbacks.onMissionUpdated) s.on('mission:updated', callbacks.onMissionUpdated);
+  if (callbacks.onMissionStageChanged) s.on('mission:stage_changed', callbacks.onMissionStageChanged);
+  if (callbacks.onIncidentCreated) s.on('incident:created', callbacks.onIncidentCreated);
   if (callbacks.onIncidentUpdated) s.on('incident:updated', callbacks.onIncidentUpdated);
   if (callbacks.onOutcomeReviewed) s.on('outcome:review_updated', callbacks.onOutcomeReviewed);
   if (callbacks.onOutcomePublished) s.on('outcome:published', callbacks.onOutcomePublished);
+  if (callbacks.onDroneRegistered) s.on('drone:registered', callbacks.onDroneRegistered);
+  if (callbacks.onDroneUpdated) s.on('drone:updated', callbacks.onDroneUpdated);
+  if (callbacks.onFlightCreated) s.on('flight:created', callbacks.onFlightCreated);
+  if (callbacks.onFlightUpdated) s.on('flight:updated', callbacks.onFlightUpdated);
+  if (callbacks.onReportUpdated) s.on('citizen:report_updated', callbacks.onReportUpdated);
+
+  const handleReconnect = () => {
+    if (callbacks.onReconnect) {
+      callbacks.onReconnect();
+    }
+  };
+  s.on('reconnect', handleReconnect);
+  s.on('connect', handleReconnect);
 
   return () => {
     if (callbacks.onMissionCreated) s.off('mission:created', callbacks.onMissionCreated);
     if (callbacks.onMissionUpdated) s.off('mission:updated', callbacks.onMissionUpdated);
+    if (callbacks.onMissionStageChanged) s.off('mission:stage_changed', callbacks.onMissionStageChanged);
+    if (callbacks.onIncidentCreated) s.off('incident:created', callbacks.onIncidentCreated);
     if (callbacks.onIncidentUpdated) s.off('incident:updated', callbacks.onIncidentUpdated);
     if (callbacks.onOutcomeReviewed) s.off('outcome:review_updated', callbacks.onOutcomeReviewed);
     if (callbacks.onOutcomePublished) s.off('outcome:published', callbacks.onOutcomePublished);
+    if (callbacks.onDroneRegistered) s.off('drone:registered', callbacks.onDroneRegistered);
+    if (callbacks.onDroneUpdated) s.off('drone:updated', callbacks.onDroneUpdated);
+    if (callbacks.onFlightCreated) s.off('flight:created', callbacks.onFlightCreated);
+    if (callbacks.onFlightUpdated) s.off('flight:updated', callbacks.onFlightUpdated);
+    if (callbacks.onReportUpdated) s.off('citizen:report_updated', callbacks.onReportUpdated);
+    s.off('reconnect', handleReconnect);
+    s.off('connect', handleReconnect);
   };
 };
 
@@ -108,17 +140,41 @@ export const subscribeToDroneTelemetry = (
   const s = connectSocket();
   const roomName = `drone:telemetry:${droneId}`;
 
-  s.emit('join_room', { room: roomName }, (res: { success: boolean; error?: string }) => {
+  s.emit('join_room', { room: roomName, assignedDroneIds: [droneId] }, (res: { success: boolean; error?: string }) => {
     if (!res?.success) {
       console.warn(`[Socket.IO] Failed to subscribe to ${roomName}:`, res?.error);
     }
   });
 
-  s.on(`telemetry:${droneId}`, onTelemetry);
-  s.on('telemetry', onTelemetry);
+  const handleTelemetry = (packet: any) => {
+    if (packet) {
+      onTelemetry(packet);
+    }
+  };
+
+  s.on(`telemetry:${droneId}`, handleTelemetry);
+  s.on('telemetry', handleTelemetry);
+  s.on('drone:gps', (gps: any) => {
+    if (gps && (!gps.droneId || gps.droneId === droneId)) {
+      handleTelemetry(gps);
+    }
+  });
+  s.on('drone:battery', (bat: any) => {
+    if (bat && (!bat.droneId || bat.droneId === droneId)) {
+      handleTelemetry(bat);
+    }
+  });
+  s.on('drone:attitude', (att: any) => {
+    if (att && (!att.droneId || att.droneId === droneId)) {
+      handleTelemetry(att);
+    }
+  });
 
   return () => {
-    s.off(`telemetry:${droneId}`, onTelemetry);
-    s.off('telemetry', onTelemetry);
+    s.off(`telemetry:${droneId}`, handleTelemetry);
+    s.off('telemetry', handleTelemetry);
+    s.off('drone:gps');
+    s.off('drone:battery');
+    s.off('drone:attitude');
   };
 };

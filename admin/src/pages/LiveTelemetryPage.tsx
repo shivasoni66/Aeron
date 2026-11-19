@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { fetchLatestTelemetry, fetchTelemetryHistory } from '../services/api';
 import { subscribeToDroneTelemetry } from '../services/socket';
 import { TelemetryData } from '../types';
-import { LiveEngineeringDiagnosticsPanel } from '../components/telemetry/LiveEngineeringDiagnosticsPanel';
 import {
   ACTIVE_DRONE_ID,
   resolveBatteryState,
@@ -186,9 +185,6 @@ export const LiveTelemetryPage: React.FC = () => {
           </button>
         </div>
       </div>
-
-      {/* Live Engineering Diagnostics Panel */}
-      <LiveEngineeringDiagnosticsPanel />
 
       {activeTab === 'pfd' ? (
         <>

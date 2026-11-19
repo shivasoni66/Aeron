@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchMissions, updateMission } from '../services/api';
+import { subscribeToManagerBroadcasts } from '../services/socket';
 import { MissionData, MissionStatus } from '../types';
 import { CreateMissionModal } from '../components/CreateMissionModal';
 
@@ -14,7 +15,7 @@ export const AllMissionsPage: React.FC = () => {
   const [selectedMission, setSelectedMission] = useState<MissionData | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const loadMissions = async (p = 1) => {
+  const loadMissions = useCallback(async (p = 1) => {
     setIsLoading(true);
     try {
       const res = await fetchMissions({
@@ -31,11 +32,22 @@ export const AllMissionsPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [category, status, search]);
 
   useEffect(() => {
     loadMissions(1);
-  }, [category, status]);
+  }, [loadMissions]);
+
+  // Real-time synchronization
+  useEffect(() => {
+    const cleanup = subscribeToManagerBroadcasts({
+      onMissionCreated: () => loadMissions(pagination.page),
+      onMissionUpdated: () => loadMissions(pagination.page),
+      onMissionStageChanged: () => loadMissions(pagination.page),
+      onReconnect: () => loadMissions(pagination.page)
+    });
+    return () => cleanup();
+  }, [loadMissions, pagination.page]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,7 +255,7 @@ export const AllMissionsPage: React.FC = () => {
                   <td className="py-3 px-4 text-text-primary font-mono text-[11px]">
                     {m.assignedDrones && m.assignedDrones.length > 0
                       ? m.assignedDrones.map((d) => d.displayName || d.droneId).join(', ')
-                      : 'AERON-HEX-01'}
+                      : <span className="text-text-muted italic">Unassigned</span>}
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end gap-2">
